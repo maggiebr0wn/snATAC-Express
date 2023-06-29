@@ -1,16 +1,6 @@
 # ATACExpress
-The objective of this project is to use ATAC-seq data to predict gene expression data, in addition to identify which peaks are most important to accurate gene expression prediction.
+The objective of this project is to use ATAC-seq data to predict gene expression data, in addition to identifying which peaks are most important to accurate gene expression prediction.
 
  
-  _________________        ____
- |________________|        \__/
- |                |        |  |
- | _______________|________|__|__
- |                             |  \
- |  ATACExpress                |   \
- |                             |    )
- |                             |   /
- |_____________________________|__/
- |  ___   ___         ___   ___   \
- |_/   \_/   \_______/   \_/   \___\
-   \___/ \___/       \___/ \___/
+
+<img width="242" alt="Screenshot 2023-06-29 at 4 00 18 PM" src="https://github.com/mfisher1995/ATACExpress/assets/36750960/6f7dac23-35ac-47e9-9708-f2a6031c2f10">
