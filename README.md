@@ -1,4 +1,4 @@
-# ATAC-Express
+# scATAC-Express
 
 The objective of this project is to use ATAC-seq data to predict gene expression data, in addition to identifying which peaks are most important to accurate gene expression prediction.
 
