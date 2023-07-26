@@ -12,3 +12,13 @@ The objective of this project is to use scATAC-seq data to predict gene expressi
 ### Input data
 <li> Pseudobulked scATAC-seq data </li>
 <li> Psueodbulked scRNA-seq data </li>
+
+-------------------
+STEPS & HOW TO RUN
+-------------------
+
+Clone this repository, then enter it and download the gencode.v41.annotation.gtf.gz file:
+
+    cd scATAC-Express
+    wget https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_41/gencode.v41.annotation.gtf.gz
+    gunzip gencode.v41.annotation.gtf.gz
