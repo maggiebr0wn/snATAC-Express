@@ -127,7 +127,7 @@ def make_pseudobulk(gene_peaks, gene_exp, pb_keep):
     return pb_peak_df, gex_peak_df
 
 # ============================================
-def Runfun(gene):
+def build_models(gene):
     global gex_df, peak_df, genes_df, pb_keep, outdir
     print("Running models for gene: " + gene)
     window = genes_df.loc[genes_df["gene"] == gene, "window"].iloc[0]
@@ -158,12 +158,38 @@ def Runfun(gene):
     feature_selector(gene, outdir)
 
 # ============================================
+def run_loo(gene):
+    global gex_df, peak_df, genes_df, pb_keep, outdir
+    # get selected_peaks.csv file
+    selected_peaks = pd.read_csv(outdir + "/" + gene + "/selected_peaks.csv")
+    test_list = selected_peaks["Result"].tolist()
+    # get gex & atac for gene and test data
+    window = genes_df.loc[genes_df["gene"] == gene, "window"].iloc[0]
+    gene_peaks = subset_peaks(peak_df, window)
+    gene_exp = subset_gex(gex_df, gene)
+    # get pseudobulk values for gene/region
+    pb_peak_df, pb_gex_df = make_pseudobulk(gene_peaks, gene_exp, pb_keep)
+    cv_dict = {}
+    for test in test_list:
+        print("Interrogating " + test)
+        final_peak_list, testdir = select_peaks(test, selected_peaks, gene, outdir)
+        # only keep peaks in final_peak_list
+        sub_pb_peak_df = pb_peak_df[pb_peak_df.index.isin(final_peak_list)]
+        # run leave-one-out cross validation
+        predicted, actual = loo_cv(test, sub_pb_peak_df, pb_gex_df, gene, outdir) # mean sq errors
+        # make pred vs act plot
+        filename = outdir + "/" + gene + "/" + testdir + "_pred_vs_act.pdf"
+        make_loo_plot(predicted, actual, filename)
+
+# ============================================
 if __name__ == "__main__":
     # import custom functions
     os.chdir("/storage/home/mfisher42/scProjects/Predict_GEX/Feature_Importance_07062023")
     from feature_selection import rf_ranker, perm_ranker, RF_dropcolumn_importance, LinReg_dropcolumn_importance, feature_selector
-    from model_builders import build_RFR_model, build_LinReg_model 
+    from model_builders import build_RFR_model, build_LinReg_model
     from assess_RF_params import grid_search_init
+    from misc_helper_functions import load_files_with_match
+    from cross_validation import select_peaks, loo_cv, make_loo_plot
     # 1.) parse arguments
     args = parse_my_args()
     gene_list = args["gene_list"]
@@ -188,22 +214,9 @@ if __name__ == "__main__":
     # run in parallel
     num_processes = 10  # Specify the number of genes to run in parallel (each run ~8% memory)
     pool = multiprocessing.Pool(processes=num_processes)
-    pool.map(Runfun, test_gene_list)
+    pool.map(build_models, test_gene_list)
     pool.close() # No more tasks will be submitted to the pool
     pool.join() # Wait for all processes to complete
-    # 6.) for each gene and model, assess stability of model
+    # 6.) for each gene and model (with optimal peak set), perform LOO cross validation (incorporate grid search for RFR)
     for gene in test_gene_list:
-        # get selected_peaks.csv file
-        selected_peaks = pd.read_csv(outdir + "/" + gene + "/selected_peaks.csv")
-        test_list = selected_peaks["Result"]
-        for test in test_list: 
-            if "_RFR_" in test:
-                print("Interrogating " + test)
-                test_name = test.split("_")[2] + "_" + test.split("_")[3]
-                npeaks = selected_peaks.loc[selected_peaks["Result"] == test, "nPeaks"].item()
-                # load peak list
-                peak_filename = gene + "_" + npeaks + "peaks_rfranker_importance.csv"
-                peak_list = pd.read_csv(outdir + "/" + gene + "/" + test_name + "/" 
-                grid_search_init(final_pb_peak_df, pb_gex_df, gene, test, outdir)
-
-
+        run_loo(gene)
