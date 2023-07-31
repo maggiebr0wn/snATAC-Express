@@ -53,6 +53,36 @@ def select_peaks(test, selected_peaks, gene, outdir): # get peaks from test resu
     return final_peak_list, test_dir
 
 # ============================================
+def grid_search_init(sub_pb_peak_df, pb_gex_df, gene, test, outdir):
+    # determine values to test in RFR parameters:
+    gs_dict = {}
+    npeaks = len(sub_pb_peak_df)
+    nsamples = len(sub_pb_peak_df.columns)
+    # number of decision trees
+    gs_dict["n_estimators"] = [round((i + 0.25) * 0.1 * 150) for i in range(10)]
+    # max depth of tree
+    gs_dict["max_depth"] = [2, 5, 10, 20, 50, 75, 100]
+    # min number of samples required to split an internal node; default = 2
+    gs_dict["min_samples_split"] = [2, 4, 6, 8, 10]
+    # min number of samples required to be at a leaf node; default = 1
+    gs_dict["min_samples_leaf"] = [1, 5, 10]
+    ### run model with gridsearch ###
+    # convert to numpy arrays, create new DataFrames with preserved index names
+    peaks_array = sub_pb_peak_df.values.T
+    gex_array = pb_gex_df.values.T
+    func_peaks_df = pd.DataFrame(peaks_array, columns=sub_pb_peak_df.index, index=sub_pb_peak_df.columns.tolist())
+    func_gex_df = pd.DataFrame(gex_array, columns=pb_gex_df.index, index=sub_pb_peak_df.columns.tolist())
+    # Full Model
+    model = RandomForestRegressor(random_state=0)
+    model.fit(func_peaks_df, func_gex_df.values.ravel())
+    # gridsearch
+    search = GridSearchCV(estimator = model, param_grid = gs_dict, n_jobs = 20, scoring="neg_mean_squared_error")
+    search.fit(func_peaks_df, func_gex_df.values.ravel())
+    # get best paramaets
+    best_params = search.best_params_
+    return best_params
+
+# ============================================
 def loo_cv(test, sub_pb_peak_df, pb_gex_df, gene, outdir): # leave-one-out cross validation
     # select model type, LinReg or RFR:
     if "_RFR_" in test:
