@@ -12,6 +12,7 @@ import pandas as pd
 from scipy import sparse, io
 import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score
+from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import LeaveOneOut
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
