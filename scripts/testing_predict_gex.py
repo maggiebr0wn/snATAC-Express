@@ -1,11 +1,13 @@
 #!/usr/sbin/anaconda
 
 import argparse
+import fnmatch
 import h5py
 import multiprocessing
 import numpy as np
 import os
 import pandas as pd
+import random
 from sklearn.model_selection import GridSearchCV
 from scipy import sparse, io
 from sklearn.linear_model import LinearRegression
@@ -18,7 +20,9 @@ from sklearn.inspection import permutation_importance
 import statsmodels.api as sm
 import sys
 
-### 07-07-2023 ###
+random.seed(12345)
+
+### 08-15-2023 ###
 # This script runs random forest and linear regression models on each gene
 # This is modified from an origanl script from Oct 2023 with the modification 
 # of running a backwards stepwise and ranking peak importances after each 
@@ -33,7 +37,12 @@ import sys
 #   5.) output_dir: this is the output directory path with which to write to
 #
 # example:
-# python ./predict_gex.py -g Run_1_10202022/genelist_tss.txt -gex /storage/home/mfisher42/scProjects/Predict_GEX/input_data/sparse_gex_matrix.txt -pks "/storage/home/mfisher42/scProjects/Predict_GEX/input_data/sparse_peak_matrix.txt" -pb 1 -out Run_1_10202022
+# python ./testing_predict_gex.py -g Run_1_10202022/genelist_tss.txt -gex /storage/home/mfisher42/scProjects/Predict_GEX/input_data/sparse_gex_matrix.txt -pks "/storage/home/mfisher42/scProjects/Predict_GEX/input_data/sparse_peak_matrix.txt" -pb 1 -out Results
+#
+#
+# Modifications:
+# 1.) split pseudobulks in half, for training and testing, from within the make_pseudobulk() function
+
 
 # ============================================
 def parse_my_args():
@@ -111,85 +120,154 @@ def subset_gex(gex_df, gene):
 
 # ============================================
 def make_pseudobulk(gene_peaks, gene_exp, pb_keep):
-    pb_peak_df = pd.DataFrame()
-    gex_peak_df = pd.DataFrame()
-    # iterative through pseudobulk groups
+    global outdir
+    training_pb_peak_df = pd.DataFrame()
+    training_gex_peak_df = pd.DataFrame()
+    testing_pb_peak_df = pd.DataFrame()
+    testing_gex_peak_df = pd.DataFrame()
+    # iterative through pseudobulk groups; split into testing and training (50/50)
     for pb_group in pb_keep.PB_Name:
         cellnames = eval(pb_keep[pb_keep.PB_Name == pb_group].CellNames.tolist()[0])
+        num_cells = len(cellnames)//2
+        # divide pseudobulks for training and testing
+        training_cellnames = random.sample(cellnames, num_cells)
+        testing_cellnames = list(set(cellnames) - set(training_cellnames))
+        ## Training pseudobulk
         # extract pb_group from peak_mat, average peak values
-        peak_subset = gene_peaks[cellnames].mean(axis = 1).to_frame()
-        peak_subset.columns = [pb_group]
-        pb_peak_df = pd.concat([pb_peak_df, peak_subset], axis = 1)
+        training_peak_subset = gene_peaks[training_cellnames].mean(axis = 1).to_frame()
+        training_peak_subset.columns = [pb_group]
+        training_pb_peak_df = pd.concat([training_pb_peak_df, training_peak_subset], axis = 1)
         # extract pb_group from gex_mat, average expression values
-        gex_subset = gene_exp[cellnames].mean(axis = 1).to_frame()
-        gex_subset.columns = [pb_group]
-        gex_peak_df = pd.concat([gex_peak_df, gex_subset], axis=1)
-    return pb_peak_df, gex_peak_df
+        training_gex_subset = gene_exp[training_cellnames].mean(axis = 1).to_frame()
+        training_gex_subset.columns = [pb_group]
+        training_gex_peak_df = pd.concat([training_gex_peak_df, training_gex_subset], axis=1)
+        ## Testing pseudobulk
+        # extract pb_group from peak_mat, average peak values
+        testing_peak_subset = gene_peaks[testing_cellnames].mean(axis = 1).to_frame()
+        testing_peak_subset.columns = [pb_group]
+        testing_pb_peak_df = pd.concat([testing_pb_peak_df, testing_peak_subset], axis = 1)
+        # extract pb_group from gex_mat, average expression values
+        testing_gex_subset = gene_exp[testing_cellnames].mean(axis = 1).to_frame()
+        testing_gex_subset.columns = [pb_group]
+        testing_gex_peak_df = pd.concat([testing_gex_peak_df, testing_gex_subset], axis=1)
+    # save pseudobulk peak matrices
+    training_peaks_filename = outdir + "/" + gene + "/" + "training_peaks.csv"
+    training_pb_peak_df.to_csv(training_peaks_filename, index=False)
+    testing_peaks_filename = outdir + "/" + gene + "/" + "testing_peaks.csv"
+    testing_pb_peak_df.to_csv(testing_peaks_filename, index=False)
+    # save pseudobulk gex matrices
+    training_gex_filename = outdir + "/" + gene + "/" + "training_gex.csv"
+    training_gex_peak_df.to_csv(training_gex_filename, index=False)
+    testing_gex_filename = outdir + "/" + gene + "/" + "testing_gex.csv"
+    testing_gex_peak_df.to_csv(testing_gex_filename, index=False)
+    return training_pb_peak_df, training_gex_peak_df, testing_pb_peak_df, testing_gex_peak_df
 
 # ============================================
 def build_models(gene):
-    global gex_df, peak_df, genes_df, pb_keep, outdir
+    global training_pb_peak_df, training_gex_peak_df
     print("Running models for gene: " + gene)
-    window = genes_df.loc[genes_df["gene"] == gene, "window"].iloc[0]
+    outdir = "/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023/Results/" + gene 
     # make output directory for gene
-    if not os.path.exists("/storage/home/mfisher42/scProjects/Predict_GEX/Feature_Importance_07062023/Results/" + gene):
-        os.makedirs("/storage/home/mfisher42/scProjects/Predict_GEX/Feature_Importance_07062023/Results/" + gene)
-    # 5.1) subset gene and region from peak_df and gex_df:
-    gene_peaks = subset_peaks(peak_df, window)
-    gene_exp = subset_gex(gex_df, gene)
-    # 5.2) get pseudobulk values for gene/region
-    pb_peak_df, pb_gex_df = make_pseudobulk(gene_peaks, gene_exp, pb_keep)
-    # 5.3) only keep peaks that exist in at least 10% of pseudobulk replicates
-    final_pb_peak_df = pb_peak_df.loc[pb_peak_df[pb_peak_df.columns].ne(0).sum(axis=1) >= len(pb_peak_df.columns)*.10]
-    # 5.4) implement random forest classifier to select peaks (10% filt peaks)
-    # build RF models; rerank after each built model
-    test = "rf_ranker"
-    build_RFR_model(final_pb_peak_df, pb_gex_df, gene, outdir, test)
-    test = "perm_ranker"
-    build_RFR_model(final_pb_peak_df, pb_gex_df, gene, outdir, test)
-    test = "dropcol_ranker"
-    build_RFR_model(final_pb_peak_df, pb_gex_df, gene, outdir, test)
-    # build linear regression models; rerank after each built model
-    test = "perm_ranker"
-    build_LinReg_model(final_pb_peak_df, pb_gex_df, gene, outdir, test)
-    test = "dropcol_ranker"
-    build_LinReg_model(final_pb_peak_df, pb_gex_df, gene, outdir, test)
-    # 5.5) determine best set of features for each model
-    feature_selector(gene, outdir)
+    if not os.path.exists("/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023/Results/" + gene):
+        os.makedirs("/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023/Results/" + gene)
+    # 5.1) Filter peaks present in at least 10% samples
+    final_pb_peak_df = training_pb_peak_df.loc[training_pb_peak_df[training_pb_peak_df.columns].ne(0).sum(axis=1) >= len(training_pb_peak_df.columns)*.1]
+    gene_exp = training_gex_peak_df
+    # exit function if fewer than 3 peaks left
+    if len(final_pb_peak_df) < 3:
+        print("DataFrame has less than 3 peaks. Exiting function.")
+        return
+    else:        
+        # 5.3) implement random forest classifier to select peaks (10% filt peaks)
+        # build RF models; rerank after each built model
+        test = "rf_ranker"
+        build_RFR_model(final_pb_peak_df, gene_exp, gene, outdir, test)
+        test = "perm_ranker"
+        build_RFR_model(final_pb_peak_df, gene_exp, gene, outdir, test)
+        test = "dropcol_ranker"
+        build_RFR_model(final_pb_peak_df, gene_exp, gene, outdir, test)
+        # build linear regression models; rerank after each built model
+        test = "perm_ranker"
+        build_LinReg_model(final_pb_peak_df, gene_exp, gene, outdir, test)
+        test = "dropcol_ranker"
+        build_LinReg_model(final_pb_peak_df, gene_exp, gene, outdir, test)
+        # 5.4) determine best set of features for each model
+        feature_selector(gene, outdir)
 
 # ============================================
-def run_loo(gene):
-    global gex_df, peak_df, genes_df, pb_keep, outdir
-    # get selected_peaks.csv file
-    selected_peaks = pd.read_csv(outdir + "/" + gene + "/selected_peaks.csv")
-    test_list = selected_peaks["Result"].tolist()
-    # get gex & atac for gene and test data
-    window = genes_df.loc[genes_df["gene"] == gene, "window"].iloc[0]
-    gene_peaks = subset_peaks(peak_df, window)
-    gene_exp = subset_gex(gex_df, gene)
-    # get pseudobulk values for gene/region
-    pb_peak_df, pb_gex_df = make_pseudobulk(gene_peaks, gene_exp, pb_keep)
-    cv_dict = {}
-    for test in test_list:
-        print("Interrogating " + test)
-        final_peak_list, testdir = select_peaks(test, selected_peaks, gene, outdir)
-        # only keep peaks in final_peak_list
-        sub_pb_peak_df = pb_peak_df[pb_peak_df.index.isin(final_peak_list)]
-        # run leave-one-out cross validation
-        predicted, actual = loo_cv(test, sub_pb_peak_df, pb_gex_df, gene, outdir) # mean sq errors
-        # make pred vs act plot
-        filename = outdir + "/" + gene + "/" + testdir + "_pred_vs_act.pdf"
-        make_loo_plot(predicted, actual, filename)
+#def celltype_split(final_pb_peak_df):
+#    celltype_list = final_pb_peak_df.columns.tolist()
+#    # dict to hold lists for each cell type
+#    lists_by_celltype = {}
+#    for sample in celltype_list:
+#        # get celltype
+#        celltype = sample.split('_')[0]
+#        # add to list
+#        if celltype in lists_by_celltype:
+#            lists_by_celltype[celltype].append(sample)
+#        else:
+#            lists_by_celltype[celltype] = [sample]
+#    # separate dict into lists
+#    result_lists = list(lists_by_celltype.values())
+#    return result_lists
+
+# ============================================
+def run_cross_validations(gene): # 1.) LOO, and Pseudo-Split
+    global training_pb_peak_df, training_gex_peak_df, testing_pb_peak_df, testing_gex_peak_df, genes_df, pb_keep, outdir
+    print("Running models for gene: " + gene)
+    outdir = "/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023/Results/" + gene
+    # intiate summary output
+    columnnames = ["gene", "celltype", "method", "cross_val", "npeaks_kept", "cv_R2"]
+    summary = pd.DataFrame(columns = columnnames)
+    # if gene previously modeled:
+    if os.path.exists(outdir + "/selected_peaks.csv"):
+        # get selected_peaks.csv file
+        selected_peaks = pd.read_csv(outdir + "/selected_peaks.csv")
+        test_list = selected_peaks["Result"].tolist()
+        # subset for cell type
+        training_pb_peak_df_sub = training_pb_peak_df
+        training_pb_gex_df_sub = training_gex_peak_df
+        testing_pb_peak_df_sub = testing_pb_peak_df
+        testing_pb_gex_df_sub = testing_gex_peak_df
+        if training_pb_gex_df_sub.values.max() > 0 and testing_pb_gex_df_sub.values.max() > 0:
+            cv_dict = {}
+            for test in test_list:
+                print("Interrogating " + test)
+                final_peak_list, testdir = select_peaks(test, selected_peaks, gene, outdir)
+                # only keep peaks in final_peak_list
+                training_sub_pb_peak_df = training_pb_peak_df_sub[training_pb_peak_df_sub.index.isin(final_peak_list)]
+                testing_sub_pb_peak_df = testing_pb_peak_df_sub[testing_pb_peak_df_sub.index.isin(final_peak_list)]
+                ## 1.0) run cross validations on training data
+                LOO_y_pred_list, LOO_actual_values, SPLIT_y_pred, SPLIT_actual_values = cross_validation_fun(test, training_sub_pb_peak_df, training_pb_gex_df_sub, testing_sub_pb_peak_df, testing_pb_gex_df_sub, gene, outdir)
+                # 1.1) make pred vs act plot for leave-one-out cross validation
+                filename = outdir + "/" + testdir + "_loocv_pred_vs_act.pdf"
+                r2_value = make_cv_plot(LOO_y_pred_list, LOO_actual_values, filename)
+                ### add values to summary dataframe
+                new_row = [gene, "all", testdir, "LOO", len(final_peak_list), r2_value]
+                summary.loc[len(summary)] = new_row
+                # 1.2) make pred vs act plot for split pseudo cross validation
+                filename = outdir + "/" + testdir + "_splitpseudocv_pred_vs_act.pdf"
+                r2_value = make_cv_plot(SPLIT_y_pred, SPLIT_actual_values, filename)
+                ### add values to summary dataframe
+                new_row = [gene, "all", testdir, "split-pseudo", len(final_peak_list), r2_value]
+                summary.loc[len(summary)] = new_row
+        else:
+            print("All GEX values are 0 for this celltype.")
+            return
+    else:
+        print("Unable to model gene. Exiting function.")
+        return
+    return summary
 
 # ============================================
 if __name__ == "__main__":
     # import custom functions
-    os.chdir("/storage/home/mfisher42/scProjects/Predict_GEX/Feature_Importance_07062023")
-    from feature_selection import rf_ranker, perm_ranker, RF_dropcolumn_importance, LinReg_dropcolumn_importance, feature_selector
-    from model_builders import build_RFR_model, build_LinReg_model
-    from assess_RF_params import grid_search_init
+    os.chdir("/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023")
+    from feature_selection import rf_ranker, perm_ranker, RF_dropcolumn_importance, LinReg_dropcolumn_importance, feature_selector, pareto_frontier
+    from model_builders import build_RFR_model, build_LinReg_model 
+    #from assess_RF_params import grid_search_init
     from misc_helper_functions import load_files_with_match
-    from cross_validation import select_peaks, loo_cv, make_loo_plot
+    from cross_validation import select_peaks, make_cv_plot, cross_validation_fun, grid_search_init
     # 1.) parse arguments
     args = parse_my_args()
     gene_list = args["gene_list"]
@@ -197,7 +275,7 @@ if __name__ == "__main__":
     peak_matrix = args["peak_matrix"]
     pseudobulk_replicate = args["pseudobulk_replicate"]
     outdir = args["output_dir"]
-    outdir = "/storage/home/mfisher42/scProjects/Predict_GEX/Feature_Importance_07062023/Results"
+    outdir = "/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023/Results"
     # 2.) load/fix/format peaks
     print("Loading ATAC peaks... this may take a few minutes.")
     peak_df = load_peak_input(peak_matrix)
@@ -208,15 +286,32 @@ if __name__ == "__main__":
     print("Data loaded!")
     pb_keep = get_pseudobulk(pseudobulk_replicate)
     # 5.) For each gene, extract values, make pseudobulk, run models:
+    # intiate summary output
+    columnnames = ["gene", "celltype", "method", "cross_val", "npeaks_kept", "cv_R2"]
+    alpha_summary = pd.DataFrame(columns = columnnames)
     genes_df = pd.read_csv(gene_list, sep = "\t")
     genes_df.columns = ["gene", "window"]
-    test_gene_list = ["IL6ST", "LYST", "MS4A1", "NCOA5", "NR4A2", "NUP98", "RAB3A", "SYN1", "TNFRSF13C", "UBP1"]
-    # run in parallel
-    num_processes = 10  # Specify the number of genes to run in parallel (each run ~8% memory)
-    pool = multiprocessing.Pool(processes=num_processes)
-    pool.map(build_models, test_gene_list)
-    pool.close() # No more tasks will be submitted to the pool
-    pool.join() # Wait for all processes to complete
-    # 6.) for each gene and model (with optimal peak set), perform LOO cross validation (incorporate grid search for RFR)
+    test_gene_list =  ["TRAF3IP2", "TRPT1", "TSPAN14", "TUBD1", "USP4"]
+    # For each gene, split dataset by cell type then run models
     for gene in test_gene_list:
-        run_loo(gene)
+    #for gene in genes_df["gene"]:
+        print(gene)
+        window = genes_df.loc[genes_df["gene"] == gene, "window"].iloc[0]
+        # make output directory for gene
+        if not os.path.exists("/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023/Results/" + gene):
+            os.makedirs("/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023/Results/" + gene)
+        # 5.1) subset gene and region from peak_df and gex_df:
+        gene_peaks = subset_peaks(peak_df, window)
+        gene_exp = subset_gex(gex_df, gene)
+        # 5.2) get pseudobulk values for gene/region
+        outdir = "/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023/Results"
+        training_pb_peak_df, training_gex_peak_df, testing_pb_peak_df, testing_gex_peak_df = make_pseudobulk(gene_peaks, gene_exp, pb_keep)
+        # 5.4) run models on each cell type, in parallel
+        build_models(gene)
+        # 6.0) for each gene and model (with optimal peak set), perform cross validation (incorporate grid search for RFR)
+        print("Performing cross validations")
+        # 6.2) run cross validations
+        #run_cross_validations(gene) # Cross validation using training and testing from splitting the pseudobulk data
+        summary = run_cross_validations(gene)
+        alpha_summary = pd.concat([alpha_summary, summary], ignore_index = True)
+        alpha_summary.to_csv("alpha_summary.csv", index=False)
