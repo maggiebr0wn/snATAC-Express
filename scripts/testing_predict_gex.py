@@ -237,6 +237,19 @@ def run_cross_validations(gene): # 1.) LOO, and Pseudo-Split
                 # only keep peaks in final_peak_list
                 training_sub_pb_peak_df = training_pb_peak_df_sub[training_pb_peak_df_sub.index.isin(final_peak_list)]
                 testing_sub_pb_peak_df = testing_pb_peak_df_sub[testing_pb_peak_df_sub.index.isin(final_peak_list)]
+                # plot correlation heatmap for final peaks:
+                # training:
+                corr = (training_sub_pb_peak_df.transpose()).corr(method = 'spearman')
+                figname = outdir + "/" + testdir + "_training_peakcorrelations.pdf"
+                plt.figure(figsize=(20, 20))
+                sns.heatmap(corr, annot = True)
+                plt.savefig(figname)
+                # testing:
+                corr = (testing_sub_pb_peak_df.transpose()).corr(method = 'spearman')
+                figname = outdir + "/" + testdir + "_testing_peakcorrelations.pdf"
+                plt.figure(figsize=(20, 20))
+                sns.heatmap(corr, annot = True)
+                plt.savefig(figname)
                 ## 1.0) run cross validations on training data
                 LOO_y_pred_list, LOO_actual_values, SPLIT_y_pred, SPLIT_actual_values = cross_validation_fun(test, training_sub_pb_peak_df, training_pb_gex_df_sub, testing_sub_pb_peak_df, testing_pb_gex_df_sub, gene, outdir)
                 # 1.1) make pred vs act plot for leave-one-out cross validation
