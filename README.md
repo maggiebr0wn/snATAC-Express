@@ -22,3 +22,6 @@ Clone this repository, then enter it and download the gencode.v41.annotation.gtf
     cd scATAC-Express
     wget https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_41/gencode.v41.annotation.gtf.gz
     gunzip gencode.v41.annotation.gtf.gz
+
+
+TBD;;
