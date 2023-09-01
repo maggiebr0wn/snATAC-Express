@@ -21,7 +21,7 @@ import sys
 # This script contains feature ranking functions to be imported to the main predict_gex.py script.
 # Each ranker function returns a sorted features dataframe.
 # The feature_selector() function checks the final output of models
-# and computes the "elbow point" (R2 vs # peaks) to determine the optimal
+# and computes the pareto front to identify the optimal
 # set of peaks to include in the model.
 
 # ============================================
@@ -122,29 +122,78 @@ def LinReg_dropcolumn_importance(func_peaks_df, func_gex_df, gene, outdir):
     return sorted_importance_df
 
 # ============================================
+#def feature_selector(gene, outdir):
+#    # get all ranker result files
+#    gene_outdir = outdir
+#    feat_dict = {}
+#    for filename in os.listdir(gene_outdir):
+#        if "_ranker_results.txt" in filename:
+#            print(filename)
+#            file = os.path.join(gene_outdir, filename)
+#            # read in each ranker_results.txt file:
+#            ranker_file = pd.read_csv(file, sep = ",")
+#            # select peaks
+#            model_all = ranker_file["R2"].iloc[0]
+#            model_one = ranker_file["R2"].iloc[-1]
+#            deviation_threshold =  (model_all - model_one) * 0.1
+#            deviations_from_start = np.abs(ranker_file['R2'] - ranker_file.iloc[0]['R2'])
+#            # pick peak
+#            condition = deviations_from_start > deviation_threshold
+#            selected_index = condition.idxmax()
+#            # get nPeaks and R2 value 
+#            npeaks = int(ranker_file["nPeaks"].iloc[[selected_index]])
+#            r2 = float(ranker_file["R2"].iloc[selected_index])
+#            feat_dict[filename] = [npeaks, r2]
+#    # save elbow points in one file
+#    best_feats = pd.DataFrame.from_dict(feat_dict, orient = "index")
+#    best_feats = best_feats.rename(columns={0:"nPeaks", 1: "R2"})
+#    best_feats = best_feats.reset_index().rename(columns={"index": "Result"})
+#    outfilename = gene_outdir + "/selected_peaks.csv"
+#    best_feats.to_csv(outfilename, index=False)
+
+# ============================================
+def pareto_frontier(Xs, Ys, maxX=True, maxY=True):
+    paretoPoints = []
+    if maxX:
+        maxX = float('-inf')
+        for x, y in zip(Xs, Ys):
+            if x >= maxX:
+                maxX = x
+                maxY = y
+                paretoPoints.append((x, y))
+    else:
+        maxY = float('-inf')
+        for x, y in zip(Xs, Ys):
+            if y >= maxY:
+                maxY = y
+                maxX = x
+                paretoPoints.append((x, y))
+    return paretoPoints
+
+# ============================================
 def feature_selector(gene, outdir):
     # get all ranker result files
-    gene_outdir = outdir + "/" + gene
+    gene_outdir = outdir
     feat_dict = {}
     for filename in os.listdir(gene_outdir):
         if "_ranker_results.txt" in filename:
             print(filename)
             file = os.path.join(gene_outdir, filename)
             # read in each ranker_results.txt file:
-            ranker_file = pd.read_csv(file, sep = ",")
-            ## 1.) compute elbow point
-            coords = np.column_stack((ranker_file["nPeaks"], ranker_file["R2"]))
-            # Calculate the distances between points and the line connecting the first and last points
-            distances = cdist(coords, [coords[0], coords[-1]], 'euclidean')
-            # Calculate the perpendicular distances
-            perp_dist = np.multiply(np.divide(distances, np.linalg.norm(coords[-1] - coords[0])), np.sqrt(np.sum(coords[-1] - coords[0]) ** 2))
-            # Calculate the curvatures
-            curv = np.diff(perp_dist[:, 1], 2)
-            # Find the index of the elbow point
-            elbow_index = np.argmax(curv) + 1
+            data = pd.read_csv(file, sep = ",")
+            # sort data
+            data_sorted = data.sort_values(by=["nPeaks", "R2"])
+            # Extract nPeaks and R2 columns
+            nPeaks_values = data_sorted["nPeaks"].tolist()
+            R2_values = data_sorted["R2"].tolist()
+            # Find the Pareto front
+            pareto_points = pareto_frontier(nPeaks_values, R2_values, maxX=False, maxY=False)
+            filtered_data = [(x, y) for x, y in pareto_points if y != 1.0]
+            # best peakset:
+            best_peaks = filtered_data[-1]
             # get nPeaks and R2 value for elbow point
-            npeaks = int(ranker_file["nPeaks"].iloc[[elbow_index]])
-            r2 = float(ranker_file["R2"].iloc[[elbow_index]])
+            npeaks = int(best_peaks[0])
+            r2 = float(best_peaks[1])
             feat_dict[filename] = [npeaks, r2]
     # save elbow points in one file
     best_feats = pd.DataFrame.from_dict(feat_dict, orient = "index")
