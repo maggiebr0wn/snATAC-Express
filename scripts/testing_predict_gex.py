@@ -3,6 +3,8 @@
 import argparse
 import fnmatch
 import h5py
+import seaborn as sns
+import matplotlib.pyplot as plt
 import multiprocessing
 import numpy as np
 import os
