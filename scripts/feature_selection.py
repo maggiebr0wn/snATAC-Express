@@ -171,6 +171,40 @@ def pareto_frontier(Xs, Ys, maxX=True, maxY=True):
     return paretoPoints
 
 # ============================================
+def XGBoost_dropcolumn_importance(func_peaks_df, func_gex_df, gene, outdir):
+    # Train the baseline model
+    baseline_model = GradientBoostingRegressor()
+    baseline_model.fit(func_peaks_df, func_gex_df.values.ravel())
+    baseline_pred = baseline_model.predict(func_peaks_df)
+    baseline_score = mean_squared_error(func_gex_df, baseline_pred)
+    # store feature importances
+    feature_importance = {}
+    # iterate over features
+    if len(func_peaks_df.columns) > 1:
+        for feature in func_peaks_df.columns:
+            peaks_modified = func_peaks_df.drop(columns=[feature])
+            # Train the modified model
+            modified_model = GradientBoostingRegressor()
+            modified_model.fit(peaks_modified, func_gex_df.values.ravel())
+            modified_pred = modified_model.predict(peaks_modified)
+            modified_score = mean_squared_error(func_gex_df.values.ravel(), modified_pred)
+            # check performance drop
+            drop = modified_score - baseline_score
+            # Store the drop in performance as feature importance
+            feature_importance[feature] = drop
+    elif len(func_peaks_df.columns) == 1:
+        feature = func_peaks_df.columns[0]
+        feature_importance[feature] = 0
+    # sort features based on performance drop
+    sorted_importance = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+    sorted_importance_df = pd.DataFrame(sorted_importance, columns=['Peak', 'Drop in Performance'])
+    # write peaks and ranks to output
+    npeaks = len(sorted_importance_df)
+    filename = outdir + "/" + gene + "_" + str(npeaks) + "peaks_xgboost_dropcolumn_importance.csv"
+    sorted_importance_df.to_csv(filename, index=False)
+    return sorted_importance_df
+
+# ============================================
 def feature_selector(gene, outdir):
     # get all ranker result files
     gene_outdir = outdir
