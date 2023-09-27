@@ -111,7 +111,7 @@ def build_LinReg_model(pb_peak_df, gex_peak_df, gene, outdir, test): # BSW based
         test_outdir = outdir + "/" + "linreg_dropcolranker"
         if not os.path.exists(test_outdir):
             os.makedirs(test_outdir)
-        sorted_features_df = RF_dropcolumn_importance(func_peaks_df, func_gex_df, gene, test_outdir)
+        sorted_features_df = LinReg_dropcolumn_importance(func_peaks_df, func_gex_df, gene, test_outdir)
     npeaks = len(sorted_features_df)
     results_dict = {npeaks: model.score(func_peaks_df, func_gex_df)}
     # Iteratively remove peaks in order of importance (least to most)
@@ -138,5 +138,7 @@ def build_LinReg_model(pb_peak_df, gex_peak_df, gene, outdir, test): # BSW based
     final_df = pd.DataFrame(results_dict.items(), columns=["nPeaks", "R2"])
     filename = outdir + "/" + gene + "_LinReg_" + test + "_results.txt"
     final_df.to_csv(filename, index=False)
+
+
 
 
