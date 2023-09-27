@@ -22,6 +22,8 @@ from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import train_test_split
 import sys
 
+from sklearn.ensemble import GradientBoostingRegressor
+
 os.chdir("/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023")
 from misc_helper_functions import load_files_with_match
 
@@ -88,6 +90,37 @@ def grid_search_init(sub_pb_peak_df, pb_gex_df, gene, test, outdir):
     return best_params
 
 # ============================================
+def XGBoost_grid_search_init(sub_pb_peak_df, pb_gex_df, gene, test, outdir):
+    # determine values to test in RFR parameters:
+    gs_dict = {}
+    npeaks = len(sub_pb_peak_df)
+    nsamples = len(sub_pb_peak_df.columns)
+    # number of decision trees
+    gs_dict["n_estimators"] = [round((i + 0.25) * 0.1 * 150) for i in range(10)]
+    # max depth of tree
+    gs_dict["max_depth"] = [2, 5, 10, 20, 50, 75, 100]
+    # min number of samples required to split an internal node; default = 2
+    gs_dict["min_samples_split"] = [2, 4, 6, 8, 10]
+    # min number of samples required to be at a leaf node; default = 1
+    gs_dict["min_samples_leaf"] = [1, 5, 10]
+    ### run model with gridsearch ###
+    # convert to numpy arrays, create new DataFrames with preserved index names
+    peaks_array = sub_pb_peak_df.values.T
+    gex_array = pb_gex_df.values.T
+    func_peaks_df = pd.DataFrame(peaks_array, columns=sub_pb_peak_df.index, index=sub_pb_peak_df.columns.tolist())
+    func_gex_df = pd.DataFrame(gex_array, columns=pb_gex_df.index, index=sub_pb_peak_df.columns.tolist())
+    # Full Model
+    model = GradientBoostingRegressor(random_state=0)
+    model.fit(func_peaks_df, func_gex_df.values.ravel())
+    # gridsearch
+    #search = GridSearchCV(estimator = model, param_grid = gs_dict, n_jobs = 20, scoring=make_scorer(r2_score))
+    search = GridSearchCV(estimator = model, param_grid = gs_dict, n_jobs = 20, scoring="neg_mean_squared_error")
+    search.fit(func_peaks_df, func_gex_df.values.ravel())
+    # get best paramaets
+    best_params = search.best_params_
+    return best_params
+
+# ============================================
 def cross_validation_fun(test, training_sub_pb_peak_df, training_pb_gex_df_sub, testing_sub_pb_peak_df, testing_pb_gex_df_sub, gene, outdir): # cross validations: LOO and pseudo-split
     print("Running LOO cross validation")
     # select model type, LinReg or RFR:
@@ -99,6 +132,12 @@ def cross_validation_fun(test, training_sub_pb_peak_df, training_pb_gex_df_sub, 
         model = RandomForestRegressor(random_state = 1, **best_params)
     elif "_LinReg_" in test:
         model = LinearRegression()
+    elif "_XGBoost_" in test:
+        # perform GridSearch
+        print("Performing grid search")
+        best_params = XGBoost_grid_search_init(training_sub_pb_peak_df, training_pb_gex_df_sub, gene, test, outdir)
+        print("Grid search done")
+        model = GradientBoostingRegressor(random_state = 1, **best_params)
     # format input data; first convert to numpy arrays
     training_peaks_array = training_sub_pb_peak_df.values.T
     training_gex_array = training_pb_gex_df_sub.values.T
@@ -150,6 +189,6 @@ def make_cv_plot(predicted, actual, filename):
     return r2
 
 # ============================================
-def split_cross_val(test, training_pb_peak_df, training_gex_peak_df, testing_pb_peak_df, testing_gex_peak_df, gene, outdir):
-    print("Running pseudobulk split cross validation")
+#def split_cross_val(test, training_pb_peak_df, training_gex_peak_df, testing_pb_peak_df, testing_gex_peak_df, gene, outdir):
+#    print("Running pseudobulk split cross validation")
     
