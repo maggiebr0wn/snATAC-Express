@@ -152,16 +152,32 @@ def make_pseudobulk(gene_peaks, gene_exp, pb_keep):
         testing_gex_subset = gene_exp[testing_cellnames].mean(axis = 1).to_frame()
         testing_gex_subset.columns = [pb_group]
         testing_gex_peak_df = pd.concat([testing_gex_peak_df, testing_gex_subset], axis=1)
+    ## normalize matrices
+    # TRAINING: get total counts for pseudobulks, divide each feature by total counts
+    training_peaks_cpm = training_pb_peak_df/training_pb_peak_df.values.sum() * 1000000
+    training_peaks_pseudobulk = training_peaks_cpm.applymap(lambda x: math.log2(x + 1))
+    training_gex_cpm = training_gex_peak_df/training_gex_peak_df.values.sum() * 1000000
+    training_gex_pseudobulk = training_gex_cpm.applymap(lambda x: math.log2(x + 1))
+    # TESTING: get total counts for pseudobulks, divide each feature by total counts
+    testing_peaks_cpm = testing_pb_peak_df/training_pb_peak_df.values.sum() * 1000000
+    testing_peaks_pseudobulk = testing_peaks_cpm.applymap(lambda x: math.log2(x + 1))
+    testing_gex_cpm = testing_gex_peak_df/training_gex_peak_df.values.sum() * 1000000
+    testing_gex_pseudobulk = testing_gex_cpm.applymap(lambda x: math.log2(x + 1))
     # save pseudobulk peak matrices
     training_peaks_filename = outdir + "/" + gene + "/" + "training_peaks.csv"
-    training_pb_peak_df.to_csv(training_peaks_filename, index=False)
+    training_peaks_pseudobulk.to_csv(training_peaks_filename, index=False)
     testing_peaks_filename = outdir + "/" + gene + "/" + "testing_peaks.csv"
-    testing_pb_peak_df.to_csv(testing_peaks_filename, index=False)
+    testing_peaks_pseudobulk.to_csv(testing_peaks_filename, index=False)
+    # save pseudobulk peak matrices
+    training_peaks_filename = outdir + "/" + gene + "/" + "training_peaks.csv"
+    training_pb_peak_df.to_csv(training_peaks_filename, index=True)
+    testing_peaks_filename = outdir + "/" + gene + "/" + "testing_peaks.csv"
+    testing_pb_peak_df.to_csv(testing_peaks_filename, index=True)
     # save pseudobulk gex matrices
     training_gex_filename = outdir + "/" + gene + "/" + "training_gex.csv"
-    training_gex_peak_df.to_csv(training_gex_filename, index=False)
+    training_gex_peak_df.to_csv(training_gex_filename, index=True)
     testing_gex_filename = outdir + "/" + gene + "/" + "testing_gex.csv"
-    testing_gex_peak_df.to_csv(testing_gex_filename, index=False)
+    testing_gex_peak_df.to_csv(testing_gex_filename, index=True)
     return training_pb_peak_df, training_gex_peak_df, testing_pb_peak_df, testing_gex_peak_df
 
 # ============================================
@@ -193,7 +209,12 @@ def build_models(gene):
         build_LinReg_model(final_pb_peak_df, gene_exp, gene, outdir, test)
         test = "dropcol_ranker"
         build_LinReg_model(final_pb_peak_df, gene_exp, gene, outdir, test)
-        # 5.4) determine best set of features for each model
+        # 5.4) Try XGBoost
+        test = "perm_ranker"
+        build_xgboost_model(final_pb_peak_df, gene_exp, gene, outdir, test)
+        test = "dropcol_ranker"
+        build_xgboost_model(final_pb_peak_df, gene_exp, gene, outdir, test)
+        # 5.5) determine best set of features for each model
         feature_selector(gene, outdir)
 
 # ============================================
