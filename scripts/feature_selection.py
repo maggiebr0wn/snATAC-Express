@@ -17,6 +17,8 @@ from sklearn.inspection import permutation_importance
 import statsmodels.api as sm
 import sys
 
+from sklearn.ensemble import GradientBoostingRegressor
+
 # 6-29-2023
 # This script contains feature ranking functions to be imported to the main predict_gex.py script.
 # Each ranker function returns a sorted features dataframe.
