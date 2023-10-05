@@ -300,7 +300,7 @@ def run_cross_validations(gene): # 1.) LOO, and Pseudo-Split
 # ============================================
 if __name__ == "__main__":
     # import custom functions
-    os.chdir("/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023")
+    os.chdir(os.getcwd())
     from feature_selection import rf_ranker, perm_ranker, RF_dropcolumn_importance, LinReg_dropcolumn_importance, feature_selector, pareto_frontier
     from model_builders import build_RFR_model, build_LinReg_model 
     #from assess_RF_params import grid_search_init
@@ -313,7 +313,7 @@ if __name__ == "__main__":
     peak_matrix = args["peak_matrix"]
     pseudobulk_replicate = args["pseudobulk_replicate"]
     outdir = args["output_dir"]
-    outdir = "/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023/Results"
+    outdir = "Results"
     # 2.) load/fix/format peaks
     print("Loading ATAC peaks... this may take a few minutes.")
     peak_df = load_peak_input(peak_matrix)

@@ -14,6 +14,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.feature_selection import SelectFromModel
 from sklearn.model_selection import train_test_split
 from sklearn.inspection import permutation_importance
+from xgboost import XGBClassifier
 import statsmodels.api as sm
 import sys
 
@@ -171,6 +172,61 @@ def build_xgboost_model(pb_peak_df, gex_peak_df, gene, outdir, test):
         sorted_features_df = XGBoost_dropcolumn_importance(func_peaks_df, func_gex_df, gene, test_outdir)
     npeaks = len(sorted_features_df)
     results_dict = {npeaks: model.score(func_peaks_df, func_gex_df)}
+    # Iteratively remove peaks in order of importance (least to most)
+    peak_list = sorted_features_df["Peak"][::-1].tolist()
+    while len(peak_list) > 1:
+        # remove peak, rerun model
+        peak = peak_list[0]
+        #print("removing " + peak)
+        peak_list.remove(peak)
+        func_peaks_sub = func_peaks_df[peak_list]
+        model.fit(func_peaks_sub, func_gex_df.values.ravel())
+        npeaks = len(peak_list)
+        # add R2 value to dictionary
+        results_dict[npeaks] = model.score(func_peaks_sub, func_gex_df)
+        # rerank peaks
+        if test == "perm_ranker":
+            baseline = permutation_importance(model, func_peaks_sub, func_gex_df)
+            sorted_features_df = perm_ranker(baseline, gene, func_peaks_sub, test_outdir)
+        elif test == "dropcol_ranker":
+            sorted_features_df = XGBoost_dropcolumn_importance(func_peaks_sub, func_gex_df, gene, test_outdir)
+        # elif drop column
+        peak_list = sorted_features_df["Peak"][::-1].tolist()
+    # save results for each model
+    final_df = pd.DataFrame(results_dict.items(), columns=["nPeaks", "R2"])
+    filename = outdir + "/" + gene + "_XGBoost_" + test + "_results.txt"
+    final_df.to_csv(filename, index=False)
+
+def build_xgboost_model2(pb_peak_df, gex_peak_df, gene, outdir, test):
+    # convert to numpy arrays
+    peaks_array = pb_peak_df.values.T
+    gex_array = gex_peak_df.values.T
+    # Create new DataFrames with preserved index names
+    func_peaks_df = pd.DataFrame(peaks_array, columns=pb_peak_df.index, index=pb_peak_df.columns.tolist())
+    func_gex_df = pd.DataFrame(gex_array, columns=gex_peak_df.index, index=pb_peak_df.columns.tolist())
+    
+    # Full Model
+    model = XGBClassifier(n_estimators = 2, max_depth = 2, learning_rate = 1, objective = 'binary:logistic')
+    model.fit(func_peaks_df, func_gex_df.values.ravel())
+    
+    # Rank peaks:
+    if test == "perm_ranker":
+        print("XGBoost2 perm_ranker: " + gene)
+        test_outdir = outdir + "/" + "xgboost2_permranker"
+        if not os.path.exists(test_outdir):
+            os.makedirs(test_outdir)
+        baseline = permutation_importance(model, func_peaks_df, func_gex_df)
+        sorted_features_df = perm_ranker(baseline, gene, func_peaks_df, test_outdir)
+    elif test == "dropcol_ranker":
+        print("XGBoost2 dropcol_ranker: " + gene)
+        test_outdir = outdir + "/" + "xgboost2_dropcolranker"
+        if not os.path.exists(test_outdir):
+            os.makedirs(test_outdir)
+        sorted_features_df = XGBoost_dropcolumn_importance(func_peaks_df, func_gex_df, gene, test_outdir)
+
+    npeaks = len(sorted_features_df)
+    results_dict = {npeaks: model.score(func_peaks_df, func_gex_df)}
+
     # Iteratively remove peaks in order of importance (least to most)
     peak_list = sorted_features_df["Peak"][::-1].tolist()
     while len(peak_list) > 1:
