@@ -19,7 +19,10 @@ import sys
 
 from sklearn.ensemble import GradientBoostingRegressor
 
-os.chdir("/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023")
+# Change this to hardcode directory
+starting_dir = os.getcwd()
+
+os.chdir(starting_dir)
 from feature_selection import rf_ranker, perm_ranker, RF_dropcolumn_importance, LinReg_dropcolumn_importance, feature_selector
 
 

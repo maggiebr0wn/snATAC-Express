@@ -45,6 +45,8 @@ random.seed(12345)
 # Modifications:
 # 1.) split pseudobulks in half, for training and testing, from within the make_pseudobulk() function
 
+input_data_path = "input_data"
+output_data_path = "Results"
 
 # ============================================
 def parse_my_args():
@@ -59,7 +61,7 @@ def parse_my_args():
 # ============================================
 def get_pseudobulk(pseudobulk_replicate):
     # pseduobulk info; filter for >=10 cells and Rep1 or Rep2
-    pb_info = pd.read_csv("/storage/home/mfisher42/scProjects/Predict_GEX/input_data/group_coverages.csv", sep = ",")
+    pb_info = pd.read_csv(input_data_path + "/group_coverages.csv", sep = ",")
     rep = str("Rep" + pseudobulk_replicate)
     pb_rep = pb_info[pb_info.PB_Name.str.contains(rep)]
     pb_keep = pb_rep[pb_rep["CellNames"].str.len()/29 >= 10] # 29 is length of each cell barcode; keep min 10 cells per PB
@@ -71,8 +73,8 @@ def load_peak_input(peak_matrix):
     sparse_peak_matrix = io.mmread(peak_matrix) # this step takes a few minutes
     sparse_peak_matrix = sparse_peak_matrix.astype(np.uint8) # mem efficient datatype
     pm_dense = sparse_peak_matrix.toarray()
-    coords = np.genfromtxt("/storage/home/mfisher42/scProjects/Predict_GEX/input_data/sparse_peak_matrix_rownames.txt", dtype=str)
-    col_names = np.genfromtxt("/storage/home/mfisher42/scProjects/Predict_GEX/input_data/sparse_peak_matrix_colnames.txt", dtype=str, comments = "+")
+    coords = np.genfromtxt(input_data_path + "/sparse_peak_matrix_rownames.txt", dtype=str)
+    col_names = np.genfromtxt(input_data_path + "/sparse_peak_matrix_colnames.txt", dtype=str, comments = "+")
     peak_df = pd.DataFrame(pm_dense, columns=col_names, index=coords)
     return peak_df
 
@@ -108,8 +110,8 @@ def load_gex_input(gex_matrix):
     sparse_gex_matrix = io.mmread(gex_matrix) # this step takes a few minutes
     sparse_gex_matrix = sparse_gex_matrix.astype(np.uint8) # mem efficient datatype
     gm_dense = sparse_gex_matrix.toarray()
-    genes = np.genfromtxt("/storage/home/mfisher42/scProjects/Predict_GEX/input_data/sparse_gex_matrix_rownames.txt", dtype=str)
-    col_names = np.genfromtxt("/storage/home/mfisher42/scProjects/Predict_GEX/input_data/sparse_gex_matrix_colnames.txt", dtype=str, comments = "+")
+    genes = np.genfromtxt(input_data_path + "sparse_gex_matrix_rownames.txt", dtype=str)
+    col_names = np.genfromtxt(input_data_path + "/sparse_gex_matrix_colnames.txt", dtype=str, comments = "+")
     gex_df = pd.DataFrame(gm_dense, columns=col_names, index=genes)
     return gex_df
 
@@ -184,10 +186,10 @@ def make_pseudobulk(gene_peaks, gene_exp, pb_keep):
 def build_models(gene):
     global training_pb_peak_df, training_gex_peak_df
     print("Running models for gene: " + gene)
-    outdir = "/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023/Results/" + gene 
+    outdir = output_data_path + "/" + gene 
     # make output directory for gene
-    if not os.path.exists("/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023/Results/" + gene):
-        os.makedirs("/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023/Results/" + gene)
+    if not os.path.exists(output_data_path + "/" + gene):
+        os.makedirs(output_data_path + "/" + gene)
     # 5.1) Filter peaks present in at least 10% samples
     final_pb_peak_df = training_pb_peak_df.loc[training_pb_peak_df[training_pb_peak_df.columns].ne(0).sum(axis=1) >= len(training_pb_peak_df.columns)*.1]
     gene_exp = training_gex_peak_df
@@ -238,7 +240,7 @@ def build_models(gene):
 def run_cross_validations(gene): # 1.) LOO, and Pseudo-Split
     global training_pb_peak_df, training_gex_peak_df, testing_pb_peak_df, testing_gex_peak_df, genes_df, pb_keep, outdir
     print("Running models for gene: " + gene)
-    outdir = "/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023/Results/" + gene
+    outdir = output_data_path + "/" + gene
     # intiate summary output
     columnnames = ["gene", "celltype", "method", "cross_val", "npeaks_kept", "cv_R2"]
     summary = pd.DataFrame(columns = columnnames)
@@ -334,8 +336,8 @@ if __name__ == "__main__":
         print(gene)
         window = genes_df.loc[genes_df["gene"] == gene, "window"].iloc[0]
         # make output directory for gene
-        if not os.path.exists("/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023/Results/" + gene):
-            os.makedirs("/storage/home/mfisher42/scProjects/Predict_GEX/Groups_Celltypes_Split_Pseudos_peakfilt10perc_paretofront_08302023/Results/" + gene)
+        if not os.path.exists(output_data_path + "/" + gene):
+            os.makedirs(output_data_path + "/" + gene)
         # 5.1) subset gene and region from peak_df and gex_df:
         gene_peaks = subset_peaks(peak_df, window)
         gene_exp = subset_gex(gex_df, gene)
