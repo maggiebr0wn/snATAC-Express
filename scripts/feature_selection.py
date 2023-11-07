@@ -1,5 +1,6 @@
 #!/usr/sbin/anaconda
 
+import lightgbm as lgbm
 import os
 import pandas as pd
 from sklearn.linear_model import LinearRegression
