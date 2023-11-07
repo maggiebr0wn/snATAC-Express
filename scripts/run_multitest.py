@@ -85,7 +85,14 @@ def build_models(gene):
         build_XGB_model(peak_set, gex_peak_df, gene, gene_outdir, test)
         test = "dropcol_ranker"
         build_XGB_model(peak_set, gex_peak_df, gene, gene_outdir, test)
-        # 5.6) Feature selection
+        # 5.6) implement LightGBM; rerank after each model built
+        test = "lgbm_ranker"
+        build_LGBM_model(peak_set, gex_peak_df, gene, gene_outdir, test)
+        test = "perm_ranker"
+        build_LGBM_model(peak_set, gex_peak_df, gene, gene_outdir, test)
+        test = "dropcol_ranker"
+        build_LGBM_model(peak_set, gex_peak_df, gene, gene_outdir, test)
+        # 5.7) Feature selection
         summary = feature_selector(gene, gene_outdir)
         alpha_summary = pd.concat([alpha_summary, summary], ignore_index = True)
         alpha_summary.to_csv("/storage/home/mfisher42/scProjects/Predict_GEX/Multitest_kfoldcv_95featselect_hyperparam_10312023/alpha_summary.csv", index=False)
