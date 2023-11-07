@@ -25,7 +25,7 @@ random.seed(12345)
 # import custom functions
 os.chdir("/storage/home/mfisher42/scProjects/Predict_GEX/Multitest_kfoldcv_95featselect_hyperparam_10312023")
 from data_preprocessing import get_pseudobulk, load_peak_input, subset_peaks, load_gex_input, subset_gex, make_all_pseudobulk
-from model_builders import build_RFR_model, build_LR_model, build_XGB_model
+from model_builders import build_RFR_model, build_LR_model, build_XGB_model, build_LGBM_model
 from feature_selection import feature_selector
 
 # ============================================
