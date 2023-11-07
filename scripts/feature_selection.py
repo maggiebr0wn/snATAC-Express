@@ -40,6 +40,21 @@ def xgb_ranker(model, gene, func_peaks_df, outdir): # rank features using XGBoos
     sorted_features_df.to_csv(filename, index=False)
     # return sorted features df
     return sorted_features_df
+    
+# ============================================
+def lgbm_ranker(model, gene, func_peaks_df, outdir): # rank features using LightLGBM regression
+    # assess features
+    feature_importances = model.feature_importances_
+    sorted_indices = feature_importances.argsort()[::-1]
+    sorted_feature_importances = feature_importances[sorted_indices]
+    sorted_features = func_peaks_df.columns[sorted_indices]
+    sorted_features_df = pd.DataFrame({'Importance': sorted_feature_importances, 'Peak': sorted_features})
+    # write peaks and ranks to output
+    npeaks = len(feature_importances)
+    filename = outdir + "/" + gene + "_" + str(npeaks) + "peaks_lgbm_ranker_importance.csv"
+    sorted_features_df.to_csv(filename, index=False)
+    # return sorted features df
+    return sorted_features_df
 
 # ============================================
 def perm_ranker(baseline, gene, func_peaks_df, outdir): # rank features with permutation importance
@@ -156,6 +171,41 @@ def XGB_dropcolumn_importance(best_params, func_peaks_df, func_gex_df, gene, out
     filename = outdir + "/" + gene + "_" + str(npeaks) + "peaks_dropcolumn_importance.csv"
     sorted_importance_df.to_csv(filename, index=False)
     return sorted_importance_df
+
+# ============================================
+def LGBM_dropcolumn_importance(best_params, func_peaks_df, func_gex_df, gene, outdir):
+    # Train the baseline model
+    baseline_model = lgbm.LGBMRegressor(**best_params)
+    baseline_model.fit(func_peaks_df, func_gex_df.values.ravel())
+    baseline_pred = baseline_model.predict(func_peaks_df)
+    baseline_score = mean_squared_error(func_gex_df, baseline_pred)
+    # store feature importances
+    feature_importance = {}
+    # iterate over feature
+    if len(func_peaks_df.columns) > 1:
+        for feature in func_peaks_df.columns:
+            peaks_modified = func_peaks_df.drop(columns=[feature])
+            # Train the modified model
+            modified_model = lgbm.LGBMRegressor(**best_params)
+            modified_model.fit(peaks_modified, func_gex_df.values.ravel())
+            modified_pred = modified_model.predict(peaks_modified)
+            modified_score = mean_squared_error(func_gex_df.values.ravel(), modified_pred)
+            # check performance drop
+            drop = modified_score - baseline_score
+            # Store the drop in performance as feature importance
+            feature_importance[feature] = drop
+    elif len(func_peaks_df.columns) == 1:
+        feature = func_peaks_df.columns[0]
+        feature_importance[feature] = 0
+    # sort features based on performance drop
+    sorted_importance = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+    sorted_importance_df = pd.DataFrame(sorted_importance, columns=['Peak', 'Importance'])
+    # write peaks and ranks to output
+    npeaks = len(sorted_importance_df)
+    filename = outdir + "/" + gene + "_" + str(npeaks) + "peaks_dropcolumn_importance.csv"
+    sorted_importance_df.to_csv(filename, index=False)
+    return sorted_importance_df
+
 
 # ============================================
 def feature_selector(gene, gene_outdir):
