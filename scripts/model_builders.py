@@ -1,5 +1,7 @@
 #!/usr/sbin/anaconda
 
+import joblib
+import lightgbm as lgbm
 import math
 import numpy as np
 import pandas as pd
@@ -8,7 +10,7 @@ from sklearn.metrics import mean_squared_error
 import os
 from sklearn.inspection import permutation_importance
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import StratifiedKFold, GroupKFold, GridSearchCV
+from sklearn.model_selection import StratifiedKFold, GroupKFold, GridSearchCV, RandomizedSearchCV
 from sklearn.model_selection import cross_val_score, KFold
 import xgboost as xgb
 
@@ -16,7 +18,7 @@ import warnings
 from sklearn.exceptions import DataConversionWarning
 
 os.chdir("/storage/home/mfisher42/scProjects/Predict_GEX/Multitest_kfoldcv_95featselect_hyperparam_10312023")
-from feature_selection import rf_ranker, xgb_ranker, perm_ranker, RF_dropcolumn_importance, LR_dropcolumn_importance, XGB_dropcolumn_importance
+from feature_selection import rf_ranker, xgb_ranker, lgbm_ranker, perm_ranker, RF_dropcolumn_importance, LR_dropcolumn_importance, XGB_dropcolumn_importance, LGBM_dropcolumn_importance
 
 # 10-12-2023
 # This script contains functions which builds models and ranks features.
@@ -91,6 +93,30 @@ def XGB_init_peakranker(model, best_params, func_peaks_df, func_gex_df,  gene_ou
     npeaks = len(sorted_features_df)
     return npeaks, sorted_features_df, test_outdir
 
+# ============================================
+def LGBM_init_peakranker(model, best_params, func_peaks_df, func_gex_df,  gene_outdir, test, gene):
+    if test == "lgbm_ranker":
+        print("LGBM lgbm_ranker: " + gene)
+        test_outdir = gene_outdir + "/" + "lgbm_ranker"
+        if not os.path.exists(test_outdir):
+            os.makedirs(test_outdir)
+        sorted_features_df = lgbm_ranker(model, gene, func_peaks_df, test_outdir)
+    elif test == "perm_ranker":
+        print("LGBM perm_ranker: " + gene)
+        test_outdir = gene_outdir + "/" + "lgbm_permranker"
+        if not os.path.exists(test_outdir):
+            os.makedirs(test_outdir)
+        baseline = permutation_importance(model, func_peaks_df, func_gex_df)
+        sorted_features_df = perm_ranker(baseline, gene, func_peaks_df, test_outdir)
+    elif test == "dropcol_ranker":
+        print("LGBM dropcol_ranker: " + gene)
+        test_outdir = gene_outdir + "/" + "lgbm_dropcolranker"
+        if not os.path.exists(test_outdir):
+            os.makedirs(test_outdir)
+        sorted_features_df = LGBM_dropcolumn_importance(best_params, func_peaks_df, func_gex_df, gene, test_outdir)
+        sorted_features_df.columns = ["Peak", "Importance"]
+    npeaks = len(sorted_features_df)
+    return npeaks, sorted_features_df, test_outdir
 
 # ============================================
 def RFR_gridsearch(func_peaks_df, func_gex_df):
@@ -140,6 +166,36 @@ def XGB_gridsearch(func_peaks_df, func_gex_df):
     inner_cv = KFold(n_splits = 5, shuffle = True, random_state = 0)
     # define inner CV for parameter search
     gs_model = GridSearchCV(estimator = xgb_mod, param_grid = gs_dict, cv = inner_cv, n_jobs = -1)
+    gs_model.fit(func_peaks_df, func_gex_df.values.ravel())
+    best_params = gs_model.best_params_
+    return best_params
+
+# ============================================
+def LGBM_gridsearch(func_peaks_df, func_gex_df):
+    ### define parameter grid:
+    gs_dict = {}
+    # number of decision trees
+    gs_dict["n_estimators"] = [30, 50, 100, 200]
+    # max depth of tree; default = 6
+    gs_dict["max_depth"] = [2, 3, 5, 10]
+    # min sum of instance weight needed in a child; min # of instances needed to be in each node; default = 1
+    gs_dict["min_child_weight"] = [1, 2, 4, 8]
+    # L1 regularization term on weights. Increasing this value will make model more conservative.
+    gs_dict["reg_alpha"] = [0.0, 0.1]
+    # learning rate; Step size shrinkage used in update to prevents overfitting.
+    gs_dict["learning_rate"] = [0.01, 0.05, 0.1]
+    # subsample_for_bin: # samples for constructing bins
+    gs_dict["subsample_for_bin"] = [200, 300, 400]
+    # fractino of observations to be randomly sampled for each tree
+    gs_dict["subsample"] = [0.5, 1]
+    # num_leaves: controls model complexity
+    gs_dict["num_leaves"] = [4, 9, 25, 50]
+    # define model
+    lgbm_mod = lgbm.LGBMRegressor()
+    # define grid search cross validation loops
+    inner_cv = KFold(n_splits = 5, shuffle = True, random_state = 0)
+    # define inner CV for parameter search
+    gs_model = RandomizedSearchCV(estimator = lgbm_mod, param_distributions = gs_dict, cv = inner_cv, n_jobs = 15)
     gs_model.fit(func_peaks_df, func_gex_df.values.ravel())
     best_params = gs_model.best_params_
     return best_params
@@ -244,6 +300,45 @@ def init_LR_kfold_crossval(model, func_peaks_df, func_gex_df, gene_outdir, test,
             r2_fold_scores.append(score)
             # cross validation feature ranking
             npeaks, sorted_features_df, test_outdir = LR_init_peakranker(model, func_peaks_df, func_gex_df,  gene_outdir, test, gene)
+            # save predicted vs actual for k-fold
+            pred_act_dir = test_outdir + "/cross_validations_all_peaks"
+            if not os.path.exists(pred_act_dir):
+                os.makedirs(pred_act_dir)
+            y_test = y_test.copy()
+            y_test["Predicted"] = y_pred.tolist()
+            outname = pred_act_dir + "/Column_" + str(column_idx) + "_Fold_" + str(fold) + ".csv"
+            y_test.to_csv(outname)
+            # sort features
+            sorted_feats_dict = sorted_features_df.groupby("Peak")["Importance"].apply(list).to_dict()
+            for peak, importance_values in sorted_feats_dict.items():
+                if peak in peak_importance_dict:
+                    peak_importance_dict[peak].extend(importance_values)
+                else:
+                    peak_importance_dict[peak] = importance_values
+    return r2_fold_scores, peak_importance_dict, test_outdir
+
+# ============================================
+def init_LGBM_kfold_crossval(model, best_params, func_peaks_df, func_gex_df, gene_outdir, test, gene):
+    num_kfold_columns = 3
+    folds_per_column = 5
+    skf_columns = [StratifiedKFold(n_splits = folds_per_column, shuffle = True, random_state = 0) for seed in range(num_kfold_columns)]
+    # Lists to store the fold scores
+    r2_fold_scores = []
+    peak_importance_dict = {}
+    # Perform cross-validation and store trained models
+    for column_idx, skf in enumerate(skf_columns):
+        for fold, (train_idx, test_idx) in enumerate(skf.split(func_peaks_df, func_gex_df[gene])):
+            X_train, y_train = func_peaks_df.iloc[train_idx], func_gex_df.iloc[train_idx]
+            X_test, y_test = func_peaks_df.iloc[test_idx], func_gex_df.iloc[test_idx]
+            # run model
+            model.fit(X_train, y_train)
+            # Predict on the test set
+            y_pred = model.predict(X_test)
+            # Evaluate the model
+            score = model.score(X_test, y_test)
+            r2_fold_scores.append(score)
+            # cross validation feature ranking
+            npeaks, sorted_features_df, test_outdir = LGBM_init_peakranker(model, best_params, X_train, y_train, gene_outdir, test, gene)
             # save predicted vs actual for k-fold
             pred_act_dir = test_outdir + "/cross_validations_all_peaks"
             if not os.path.exists(pred_act_dir):
@@ -546,6 +641,106 @@ def build_XGB_model(pb_peak_df, gex_peak_df, gene, gene_outdir, test):
     filename = gene_outdir + "/" + gene + "_XGB_" + test + "_results.txt"
     final_df.to_csv(filename, index = False)
 
+# ============================================
+def build_LGBM_model(pb_peak_df, gex_peak_df, gene, gene_outdir, test):
+    # convert to numpy arrays
+    peaks_array = pb_peak_df.values.T
+    gex_array = gex_peak_df.values.T
+    # Create new DataFrames with preserved index names
+    func_peaks_df = pd.DataFrame(peaks_array, columns=pb_peak_df.index, index=pb_peak_df.columns.tolist())
+    func_gex_df = pd.DataFrame(gex_array, columns=gex_peak_df.index, index=pb_peak_df.columns.tolist())
+    func_peaks_df.columns = func_peaks_df.columns.str.replace(':', '_').str.replace('-', '_') # [LightGBM] [Fatal] Do not support special JSON characters in feature name.
+    ### optimize parameters with gridsearch
+    best_params = LGBM_gridsearch(func_peaks_df, func_gex_df)
+    model = lgbm.LGBMRegressor(**best_params)
+    ### Perform k-fold CV for optimized model
+    r2_fold_scores, peak_importance_dict, test_outdir = init_LGBM_kfold_crossval(model, best_params, func_peaks_df, func_gex_df, gene_outdir, test, gene)
+    # fit and save optimized/trained model:
+    model.fit(func_peaks_df, func_gex_df)
+    model_name = test_outdir + "/trained_model_all_peaks.pkl"
+    joblib.dump(model, model_name)
+    # Calculate the average R2 cross validation score
+    average_score = np.mean(r2_fold_scores)
+    print(f"Average Score: {average_score}")
+    npeaks = len(func_peaks_df.columns)
+    results_dict = {npeaks: average_score}
+    # Calculate the average of the values for each key in the dictionary
+    average_importance_df = avg_feature_importances(peak_importance_dict)
+    # Run/Test model on top 95% cumulative important peaks
+    total = average_importance_df["Average Importance"].sum()
+    thresh = total*.95
+    current_sum = 0
+    rows_to_keep = []
+    # Extract peaks
+    for index, row in average_importance_df.iterrows():
+        current_sum += row["Average Importance"]
+        rows_to_keep.append(index)
+        if current_sum > thresh:
+            break
+    # Slice the DataFrame to keep the top rows
+    extracted_average_importance_df = average_importance_df.loc[rows_to_keep]
+    # rerun model and k-fold cross validation with extracted peaks
+    sub_func_peaks_df = func_peaks_df[extracted_average_importance_df["Peak"].tolist()]
+    ### optimize parameters with gridsearch
+    best_params = LGBM_gridsearch(sub_func_peaks_df, func_gex_df)
+    model = lgbm.LGBMRegressor(**best_params)
+    # fit and save optimized/trained model:
+    model.fit(sub_func_peaks_df, func_gex_df)
+    model_name = test_outdir + "/trained_model_top95_peaks.pkl"
+    joblib.dump(model, model_name)
+    ### perform k-fold cross validation for optimized model
+    num_kfold_columns = 3
+    folds_per_column = 5
+    skf_columns = [StratifiedKFold(n_splits = folds_per_column, shuffle = True, random_state = 0) for seed in range(num_kfold_columns)]
+    r2_fold_scores = []
+    peak_importance_dict = {}
+    # Perform cross-validation and store trained models
+    for column_idx, skf in enumerate(skf_columns):
+        for fold, (train_idx, test_idx) in enumerate(skf.split(sub_func_peaks_df, func_gex_df[gene])):
+            X_train, y_train = sub_func_peaks_df.iloc[train_idx], func_gex_df.iloc[train_idx]
+            X_test, y_test = sub_func_peaks_df.iloc[test_idx], func_gex_df.iloc[test_idx]
+            # run model
+            model.fit(X_train, y_train)
+            # Predict on the test set
+            y_pred = model.predict(X_test)
+            # Evaluate the model
+            score = model.score(X_test, y_test)
+            r2_fold_scores.append(score)
+            # cross validation model feature ranking
+            if test == "lgbm_ranker":
+                sorted_features_df = lgbm_ranker(model, gene, sub_func_peaks_df, test_outdir)
+            elif test == "perm_ranker":
+                baseline = permutation_importance(model, X_train, y_train)
+                sorted_features_df = perm_ranker(baseline, gene, sub_func_peaks_df, test_outdir)
+            elif test == "dropcol_ranker":
+                sorted_features_df = LGBM_dropcolumn_importance(best_params, X_train, y_train, gene, test_outdir)
+            # save predicted vs actual for k-fold
+            pred_act_dir = test_outdir + "/cross_validations_top95_peaks"
+            if not os.path.exists(pred_act_dir):
+                os.makedirs(pred_act_dir)
+            y_test = y_test.copy()
+            y_test["Predicted"] = y_pred.tolist()
+            outname = pred_act_dir + "/Column_" + str(column_idx) + "_Fold_" + str(fold) + ".csv"
+            y_test.to_csv(outname)
+            # sort atac peaks
+            sorted_feats_dict = sorted_features_df.groupby("Peak")["Importance"].apply(list).to_dict()
+            for peak, importance_values in sorted_feats_dict.items():
+                if peak in peak_importance_dict:
+                    peak_importance_dict[peak].extend(importance_values)
+                else:
+                    peak_importance_dict[peak] = importance_values
+    # Calculate the average R2 score
+    average_score = np.mean(r2_fold_scores)
+    print(f"Average Score: {average_score}")
+    npeaks = len(sub_func_peaks_df.columns)
+    # add R2 value to dictionary
+    results_dict[npeaks] = average_score
+    # Calculate the average of the values for each key in the dictionary
+    extracted_average_importance_df = average_importance_df.loc[rows_to_keep]
+    # save results for each model
+    final_df = pd.DataFrame(results_dict.items(), columns = ["nPeaks", "R2"])
+    filename = gene_outdir + "/" + gene + "_LGBM_" + test + "_results.txt"
+    final_df.to_csv(filename, index = False)
 
 
 
