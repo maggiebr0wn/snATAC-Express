@@ -16,7 +16,7 @@ random.seed(12345)
 # 10-12-2023
 # This script runs many predictive models.
 # Example for how to run:
-# python ./run_multitest.py  -g genelist_genebody.txt -gex sparse_gex_matrix.txt -pks sparse_peak_matrix.txt -pb 1 -out ./Results
+# python ./run_multitest.py  -g genelist_genebody.txt -n <gene name> -gex sparse_gex_matrix.txt -pks sparse_peak_matrix.txt -pb 1 -f 10 -out ./Results
 
 # import custom functions
 os.chdir("/storage/home/mfisher42/scProjects/Predict_GEX/Multitest_kfoldcv_95featselect_hyperparam_10312023")
