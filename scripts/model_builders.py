@@ -14,9 +14,6 @@ from sklearn.model_selection import StratifiedKFold, GroupKFold, GridSearchCV, R
 from sklearn.model_selection import cross_val_score, KFold
 import xgboost as xgb
 
-import warnings
-from sklearn.exceptions import DataConversionWarning
-
 os.chdir("/storage/home/mfisher42/scProjects/Predict_GEX/Multitest_kfoldcv_95featselect_hyperparam_10312023")
 from feature_selection import rf_ranker, xgb_ranker, lgbm_ranker, perm_ranker, RF_dropcolumn_importance, LR_dropcolumn_importance, XGB_dropcolumn_importance, LGBM_dropcolumn_importance
 
@@ -195,7 +192,7 @@ def LGBM_gridsearch(func_peaks_df, func_gex_df):
     # define grid search cross validation loops
     inner_cv = KFold(n_splits = 5, shuffle = True, random_state = 0)
     # define inner CV for parameter search
-    gs_model = RandomizedSearchCV(estimator = lgbm_mod, param_distributions = gs_dict, cv = inner_cv, n_jobs = 15)
+    gs_model = RandomizedSearchCV(estimator = lgbm_mod, param_distributions = gs_dict, cv = inner_cv, n_jobs = -1)
     gs_model.fit(func_peaks_df, func_gex_df.values.ravel())
     best_params = gs_model.best_params_
     return best_params
@@ -279,7 +276,7 @@ def init_XGB_kfold_crossval(model, best_params, func_peaks_df, func_gex_df, gene
     return r2_fold_scores, peak_importance_dict, test_outdir
 
 # ============================================
-def init_LR_kfold_crossval(model, func_peaks_df, func_gex_df, gene_outdir, test, gene):
+def init_XGB_kfold_crossval(model, best_params, func_peaks_df, func_gex_df, gene_outdir, test, gene):
     num_kfold_columns = 3
     folds_per_column = 5
     skf_columns = [StratifiedKFold(n_splits = folds_per_column, shuffle = True, random_state = 0) for seed in range(num_kfold_columns)]
@@ -299,7 +296,7 @@ def init_LR_kfold_crossval(model, func_peaks_df, func_gex_df, gene_outdir, test,
             score = model.score(X_test, y_test)
             r2_fold_scores.append(score)
             # cross validation feature ranking
-            npeaks, sorted_features_df, test_outdir = LR_init_peakranker(model, func_peaks_df, func_gex_df,  gene_outdir, test, gene)
+            npeaks, sorted_features_df, test_outdir = XGB_init_peakranker(model, best_params, X_train, y_train, gene_outdir, test, gene)
             # save predicted vs actual for k-fold
             pred_act_dir = test_outdir + "/cross_validations_all_peaks"
             if not os.path.exists(pred_act_dir):
@@ -382,9 +379,13 @@ def build_RFR_model(pb_peak_df, gex_peak_df, gene, gene_outdir, test):
     func_gex_df = pd.DataFrame(gex_array, columns=gex_peak_df.index, index=pb_peak_df.columns.tolist())
     ### optimize parameters with gridsearch
     best_params = RFR_gridsearch(func_peaks_df, func_gex_df)
-    model = RandomForestRegressor(n_estimators = best_params['n_estimators'], max_depth = best_params['max_depth'], min_samples_split = best_params['min_samples_split'], min_samples_leaf = best_params['min_samples_leaf'], max_features = best_params['max_features'])
+    model = RandomForestRegressor(**best_params)
     ### perform k-fold cross validation for optimized model
     r2_fold_scores, peak_importance_dict, test_outdir = init_RFR_kfold_crossval(model, best_params, func_peaks_df, func_gex_df, gene_outdir, test, gene)
+    # fit and save optimized/trained model:
+    model.fit(func_peaks_df, func_gex_df)
+    model_name = test_outdir + "/trained_model_all_peaks.pkl"
+    joblib.dump(model, model_name)
     # Calculate the average R2 cross validation score
     average_score = np.mean(r2_fold_scores)
     print(f"Average Score: {average_score}")
@@ -409,7 +410,11 @@ def build_RFR_model(pb_peak_df, gex_peak_df, gene, gene_outdir, test):
     sub_func_peaks_df = func_peaks_df[extracted_average_importance_df["Peak"].tolist()]
     ### optimize parameters with gridsearch
     best_params = RFR_gridsearch(sub_func_peaks_df, func_gex_df)
-    model = RandomForestRegressor(n_estimators = best_params['n_estimators'], max_depth = best_params['max_depth'], min_samples_split = best_params['min_samples_split'], min_samples_leaf = best_params['min_samples_leaf'], max_features = best_params['max_features'])
+    model = RandomForestRegressor(**best_params)
+    # fit and save optimized/trained model:
+    model.fit(sub_func_peaks_df, func_gex_df)
+    model_name = test_outdir + "/trained_model_top95_peaks.pkl"
+    joblib.dump(model, model_name)
     ### perform k-fold cross validation for optimized model
     num_kfold_columns = 3
     folds_per_column = 5
@@ -475,6 +480,10 @@ def build_LR_model(pb_peak_df, gex_peak_df, gene, gene_outdir, test):
     ### perform k-fold cross validation for optimized model
     model = LinearRegression()
     r2_fold_scores, peak_importance_dict, test_outdir = init_LR_kfold_crossval(model, func_peaks_df, func_gex_df, gene_outdir, test, gene)
+    # fit and save optimized/trained model:
+    model.fit(func_peaks_df, func_gex_df)
+    model_name = test_outdir + "/trained_model_all_peaks.pkl"
+    joblib.dump(model, model_name)
     # Calculate the average R2 cross validation score
     average_score = np.mean(r2_fold_scores)
     print(f"Average Score: {average_score}")
@@ -497,6 +506,10 @@ def build_LR_model(pb_peak_df, gex_peak_df, gene, gene_outdir, test):
     extracted_average_importance_df = average_importance_df.loc[rows_to_keep]
     # rerun model and k-fold cross validation with extracted peaks
     sub_func_peaks_df = func_peaks_df[extracted_average_importance_df["Peak"].tolist()]
+    # fit and save optimized/trained model:
+    model.fit(sub_func_peaks_df, func_gex_df)
+    model_name = test_outdir + "/trained_model_top95_peaks.pkl"
+    joblib.dump(model, model_name)
     # Lists to store the fold scores
     r2_fold_scores = []
     peak_importance_dict = {}
@@ -559,9 +572,13 @@ def build_XGB_model(pb_peak_df, gex_peak_df, gene, gene_outdir, test):
     func_gex_df = pd.DataFrame(gex_array, columns=gex_peak_df.index, index=pb_peak_df.columns.tolist())
     ### optimize parameters with gridsearch
     best_params = XGB_gridsearch(func_peaks_df, func_gex_df)
-    model = xgb.XGBRegressor(alpha = best_params["alpha"], importance_type = best_params["importance_type"], learning_rate = best_params["learning_rate"], max_depth = best_params["max_depth"], min_child_weight = best_params["min_child_weight"], n_estimators = best_params["n_estimators"], subsample = best_params["subsample"])
+    model = xgb.XGBRegressor(**best_params)
     ### Perform k-fold CV for optimized model
     r2_fold_scores, peak_importance_dict, test_outdir = init_XGB_kfold_crossval(model, best_params, func_peaks_df, func_gex_df, gene_outdir, test, gene)
+    # fit and save optimized/trained model:
+    model.fit(func_peaks_df, func_gex_df)
+    model_name = test_outdir + "/trained_model_all_peaks.pkl"
+    joblib.dump(model, model_name)
     # Calculate the average R2 cross validation score
     average_score = np.mean(r2_fold_scores)
     print(f"Average Score: {average_score}")
@@ -586,7 +603,11 @@ def build_XGB_model(pb_peak_df, gex_peak_df, gene, gene_outdir, test):
     sub_func_peaks_df = func_peaks_df[extracted_average_importance_df["Peak"].tolist()]
     ### optimize parameters with gridsearch
     best_params = XGB_gridsearch(sub_func_peaks_df, func_gex_df)
-    model = xgb.XGBRegressor(alpha = best_params["alpha"], importance_type = best_params["importance_type"], learning_rate = best_params["learning_rate"], max_depth = best_params["max_depth"], min_child_weight = best_params["min_child_weight"], n_estimators = best_params["n_estimators"], subsample = best_params["subsample"])
+    model = xgb.XGBRegressor(**best_params)
+    # fit and save optimized/trained model:
+    model.fit(sub_func_peaks_df, func_gex_df)
+    model_name = test_outdir + "/trained_model_top95_peaks.pkl"
+    joblib.dump(model, model_name)
     ### perform k-fold cross validation for optimized model
     num_kfold_columns = 3
     folds_per_column = 5
@@ -741,6 +762,7 @@ def build_LGBM_model(pb_peak_df, gex_peak_df, gene, gene_outdir, test):
     final_df = pd.DataFrame(results_dict.items(), columns = ["nPeaks", "R2"])
     filename = gene_outdir + "/" + gene + "_LGBM_" + test + "_results.txt"
     final_df.to_csv(filename, index = False)
+
 
 
 
