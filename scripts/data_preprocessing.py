@@ -35,6 +35,7 @@ def load_peak_input(peak_matrix):
     col_names = np.genfromtxt("/storage/home/mfisher42/scProjects/Predict_GEX/input_data/sparse_peak_matrix_colnames.txt", dtype=str, comments = "+")
     peak_df = pd.DataFrame(pm_dense, columns=col_names, index=coords)
     return peak_df
+    
 # ============================================
 def subset_peaks(peak_df, window):
     ## break up regions into columns for peak_df
@@ -107,52 +108,3 @@ def make_all_pseudobulk(gene_peaks, gene_exp, gene, pb_keep, outdir, peak_df, ge
     gex_filename = outdir + "/" + gene + "/" + "gex.csv"
     gex_pseudobulk.to_csv(gex_filename, index=True)
     return pb_peak_df, gex_peak_df
-
-# ============================================
-def load_independent_peaks(test_peak_matrix):
-    # PEAKS
-    sparse_peak_matrix = io.mmread(test_peak_matrix) # this step takes a few minutes
-    sparse_peak_matrix = sparse_peak_matrix.astype(np.uint8) # mem efficient datatype
-    pm_dense = sparse_peak_matrix.toarray()
-    coords = np.genfromtxt("/storage/home/mfisher42/scProjects/Predict_GEX/Multitest_kfoldcv_95featselect_hyperparam_10312023/test_data/script-output/sparse_peak_matrix_rownames.txt", dtype=str)
-    col_names = np.genfromtxt("/storage/home/mfisher42/scProjects/Predict_GEX/Multitest_kfoldcv_95featselect_hyperparam_10312023/test_data/script-output/sparse_peak_matrix_colnames.txt", dtype=str, comments = "+")
-    test_peak_df = pd.DataFrame(pm_dense, columns=col_names, index=coords)
-    return test_peak_df
-
-# ============================================
-def load_independent_gex_(test_gex_matrix):
-    ## load input, format into DF for gene of interest
-    sparse_gex_matrix = io.mmread(test_gex_matrix) # this step takes a few minutes
-    sparse_gex_matrix = sparse_gex_matrix.astype(np.uint8) # mem efficient datatype
-    gm_dense = sparse_gex_matrix.toarray()
-    genes = np.genfromtxt("/storage/home/mfisher42/scProjects/Predict_GEX/Multitest_kfoldcv_95featselect_hyperparam_10312023/test_data/script-output/sparse_gex_matrix_rownames.txt", dtype=str)
-    col_names = np.genfromtxt("/storage/home/mfisher42/scProjects/Predict_GEX/Multitest_kfoldcv_95featselect_hyperparam_10312023/test_data/script-output/sparse_gex_matrix_colnames.txt", dtype=str, comments = "+")
-    test_gex_df = pd.DataFrame(gm_dense, columns=col_names, index=genes)
-    return test_gex_df
-  
-# ============================================
-def get_independent_pseudobulk(pseudobulk_replicate):
-    # pseduobulk info; filter for >=10 cells and Rep1 or Rep2
-    GroupCoveragesDir = "test_data/group-coverages"
-    cols = ["PB_Name", "CellNames"]
-    PB_list = []
-    for filename in os.listdir(GroupCoveragesDir):
-        file = os.path.join(GroupCoveragesDir, filename)
-        print(file)
-        # read in file
-        f = h5py.File(file, "r")
-        # pseudobulkname
-        pbname = file.split("/")[-1]
-        # get cellnames
-        group = f["Coverage"]
-        info = group["Info"]
-        cellnames = info["CellNames"]
-        cellnames_final = [x.decode("utf-8") for x in cellnames[()]]
-        # append to PB_list
-        PB_list.append([pbname, cellnames_final])
-    PB_df = pd.DataFrame(PB_list, columns = cols)
-    #pb_info = pd.read_csv("/storage/home/mfisher42/scProjects/Predict_GEX/input_data/group_coverages.csv", sep = ",")
-    rep = str("Rep" + pseudobulk_replicate)
-    pb_rep = PB_df[PB_df.PB_Name.str.contains(rep)]
-    pb_test = pb_rep[pb_rep["CellNames"].str.len()/29 >= 10] # 29 is length of each cell barcode; keep min 10 cells per PB
-    return pb_test
