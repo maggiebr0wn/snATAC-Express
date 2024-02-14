@@ -74,7 +74,7 @@ def perm_ranker(baseline, gene, func_peaks_df, outdir): # rank features with per
 # ============================================
 def RF_dropcolumn_importance(best_params, func_peaks_df, func_gex_df, gene, outdir):
     # Train the baseline model
-    baseline_model = RandomForestRegressor(n_estimators = best_params['n_estimators'], max_depth = best_params['max_depth'], min_samples_split = best_params['min_samples_split'], min_samples_leaf = best_params['min_samples_leaf'], max_features = best_params['max_features'])
+    baseline_model = RandomForestRegressor(**best_params)
     baseline_model.fit(func_peaks_df, func_gex_df.values.ravel())
     baseline_pred = baseline_model.predict(func_peaks_df)
     baseline_score = mean_squared_error(func_gex_df, baseline_pred)
@@ -85,7 +85,7 @@ def RF_dropcolumn_importance(best_params, func_peaks_df, func_gex_df, gene, outd
         for feature in func_peaks_df.columns:
             peaks_modified = func_peaks_df.drop(columns=[feature])
             # Train the modified model
-            modified_model = RandomForestRegressor(n_estimators = best_params['n_estimators'], max_depth = best_params['max_depth'], min_samples_split = best_params['min_samples_split'], min_samples_leaf = best_params['min_samples_leaf'], max_features = best_params['max_features'])
+            modified_model = RandomForestRegressor(**best_params)
             modified_model.fit(peaks_modified, func_gex_df.values.ravel())
             modified_pred = modified_model.predict(peaks_modified)
             modified_score = mean_squared_error(func_gex_df.values.ravel(), modified_pred)
@@ -142,7 +142,7 @@ def LR_dropcolumn_importance(func_peaks_df, func_gex_df, gene, outdir):
 # ============================================
 def XGB_dropcolumn_importance(best_params, func_peaks_df, func_gex_df, gene, outdir):
     # Train the baseline model
-    baseline_model = xgb.XGBRegressor(alpha = best_params["alpha"], importance_type = best_params["importance_type"], learning_rate = best_params["learning_rate"], max_depth = best_params["max_depth"], min_child_weight = best_params["min_child_weight"], n_estimators = best_params["n_estimators"], subsample = best_params["subsample"])
+    baseline_model = xgb.XGBRegressor(**best_params)
     baseline_model.fit(func_peaks_df, func_gex_df.values.ravel())
     baseline_pred = baseline_model.predict(func_peaks_df)
     baseline_score = mean_squared_error(func_gex_df, baseline_pred)
@@ -153,7 +153,7 @@ def XGB_dropcolumn_importance(best_params, func_peaks_df, func_gex_df, gene, out
         for feature in func_peaks_df.columns:
             peaks_modified = func_peaks_df.drop(columns=[feature])
             # Train the modified model
-            modified_model = xgb.XGBRegressor(alpha = best_params["alpha"], importance_type = best_params["importance_type"], learning_rate = best_params["learning_rate"], max_depth = best_params["max_depth"], min_child_weight = best_params["min_child_weight"], n_estimators = best_params["n_estimators"], subsample = best_params["subsample"])
+            modified_model = xgb.XGBRegressor(**best_params)
             modified_model.fit(peaks_modified, func_gex_df.values.ravel())
             modified_pred = modified_model.predict(peaks_modified)
             modified_score = mean_squared_error(func_gex_df.values.ravel(), modified_pred)
@@ -207,7 +207,6 @@ def LGBM_dropcolumn_importance(best_params, func_peaks_df, func_gex_df, gene, ou
     sorted_importance_df.to_csv(filename, index=False)
     return sorted_importance_df
 
-
 # ============================================
 def feature_selector(gene, gene_outdir):
     # get all ranker result files
@@ -236,6 +235,7 @@ def feature_selector(gene, gene_outdir):
             new_row_all = [gene, "all", method, "N", all_nPeaks, all_r2]
             summary.loc[len(summary)] = new_row_all
     return summary
+
 
 
 
