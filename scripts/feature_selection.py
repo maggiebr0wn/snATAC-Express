@@ -10,7 +10,7 @@ from sklearn.ensemble import RandomForestRegressor
 import xgboost as xgb
 
 # 10-16-2023
-# This script contains feature ranking functions to be imported to the main predict_gex.py script.
+# This script contains feature ranking functions to be imported to the main model_builders.py script.
 
 # ============================================
 def rf_ranker(model, gene, func_peaks_df, outdir): # rank features using random forest regression
