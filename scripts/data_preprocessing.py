@@ -81,7 +81,7 @@ def subset_gex(gex_df, gene):
     return gene_exp
   
 # ============================================
-def make_all_pseudobulk(gene_peaks, gene_exp, gene, pb_keep, outdir, peak_df, gex_df):
+def make_all_pseudobulk(gene_peaks, gene_exp, gene, pb_keep, outdir):
     pb_peak_df = pd.DataFrame()
     gex_peak_df = pd.DataFrame()
     # iterative through pseudobulk groups
