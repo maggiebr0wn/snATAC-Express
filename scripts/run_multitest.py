@@ -89,7 +89,6 @@ def build_models(gene):
 
 # ============================================
 if __name__ == "__main__":
-    os.chdir("/storage/home/mfisher42/scProjects/Predict_GEX/Multitest_kfoldcv_95featselect_hyperparam_10312023/")
     # 1.) parse arguments
     args = parse_my_args()
     gene_list = args["gene_list"]
