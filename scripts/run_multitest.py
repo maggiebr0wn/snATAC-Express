@@ -8,10 +8,8 @@ import os
 import pandas as pd
 import random
 from scipy import sparse, io
-import statsmodels.api as sm
 import sys
 
-random.seed(12345)
 
 # 10-12-2023
 # This script runs many predictive models.
