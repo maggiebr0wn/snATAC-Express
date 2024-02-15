@@ -16,7 +16,7 @@ for gene in genes_df["gene"]:
     print(gene)
     # make slurm script
     slurm_script = f"""#!/bin/bash
-#SBATCH -J {gene}_10perc_parallel_pipeline
+#SBATCH -J {gene}_parallel_pipeline
 #SBATCH -A gts-ggibson3-biocluster
 #SBATCH -N1 
 #SBATCH --gres=gpu:V100:2
