@@ -31,7 +31,7 @@ for gene in genes_df["gene"]:
 cd $SLURM_SUBMIT_DIR
 module load anaconda3/2022.05.0.1
 conda activate LinReg
-srun --cpus-per-task=24 python ./run_multitest.py -g /storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/RA_Genes_01262024/Multitest_kfoldcv_95featselect_hyperparam_50perc_parallel_01302024/genelist_genebody.txt -n {gene} -gex /storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/sparse_gex_matrix.txt -pks /storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/sparse_peak_matrix.txt -pb 1 -out /storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/RA_Genes_01262024/Multitest_kfoldcv_95featselect_hyperparam_50perc_parallel_01302024/Results
+srun --cpus-per-task=24 python ./run_multitest.py -g /storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/RA_Genes_01262024/Multitest_kfoldcv_95featselect_hyperparam_50perc_parallel_01302024/genelist_genebody.txt -n {gene} -gex /storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/sparse_gex_matrix.txt -pks /storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/sparse_peak_matrix.txt -f 50 -pb 1 -out /storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/RA_Genes_01262024/Multitest_kfoldcv_95featselect_hyperparam_50perc_parallel_01302024/Results
 """
     # Save the Slurm script to a file
     with open(f"{gene}_slurm_script.sbatch", "w") as file:
