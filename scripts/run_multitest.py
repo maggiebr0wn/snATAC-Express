@@ -49,7 +49,7 @@ def build_models(gene):
     gene_peaks = subset_peaks(peak_df, window)
     gene_exp = subset_gex(gex_df, gene)
     # get pseudobulk values for gene/region
-    pb_peak_df, gex_peak_df = make_all_pseudobulk(gene_peaks, gene_exp, gene, pb_keep, outdir, peak_df, gex_df)
+    pb_peak_df, gex_peak_df = make_all_pseudobulk(gene_peaks, gene_exp, gene, pb_keep, outdir)
     # Filter peaks:
     filt = int(peak_filter)/100
     peak_set = pb_peak_df.loc[pb_peak_df[pb_peak_df.columns].ne(0).sum(axis=1) >= len(pb_peak_df.columns)*filt]
