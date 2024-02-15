@@ -60,7 +60,7 @@ def build_models(gene):
     elif (gex_peak_df.max().max() == 0) or np.isnan(gex_peak_df.max().max()):
         print("Max gene expression value is 0. Exiting function.")
     else:
-        # 5.3) implement random forest classifier; rerank after each built model
+        # 5.3) implement random forest regression; rerank after each built model
         test = "rf_ranker"
         build_RFR_model(peak_set, gex_peak_df, gene, gene_outdir, test)
         test = "perm_ranker"
