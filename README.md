@@ -24,5 +24,13 @@ Clone this repository, then enter it and download the gencode.v41.annotation.gtf
     wget https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_41/gencode.v41.annotation.gtf.gz
     gunzip gencode.v41.annotation.gtf.gz
 
+### **Step 1:** Get coordinates of interest for each gene
+
+This script obtains a specified cis-regulatoru window around a gene depending on the user's input. The user can specify whether they want to choose a window of any size, around a gene's transciption start site or gene body. Outputs a file called gene_list.txt which lists each gene and the defined region's coordinates.
+
+    ./get_gene_coords.sh -g <gene_list> -a <gencode annotations> -r <region type: tss/genebody> -w <window size> -o <output dir>
+
+
+
 
 Vignette and practice data in progress;;
