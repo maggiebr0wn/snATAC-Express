@@ -1,5 +1,6 @@
 # scATAC-Express
 
+***Manuscript in prep***
 ----------
 OBJECTIVE
 ----------
@@ -10,8 +11,8 @@ The objective of this project is to use scATAC-seq data to predict gene expressi
 ## Requirements
 
 ### Input data
-<li> Pseudobulked scATAC-seq data </li>
-<li> Psueodbulked scRNA-seq data </li>
+<li> scATAC-seq peak matrix </li>
+<li> scRNA-seq raw counts matrix </li>
 
 -------------------
 STEPS & HOW TO RUN
