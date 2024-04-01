@@ -1,4 +1,4 @@
-#/usr/bin/bash
+#!/usr/bin/bash
 
 # 10-20-2022
 # This script pbtaines gene coordinates for a specified window around a gene or a gene's transcription start site
