@@ -7,10 +7,10 @@
 #   Column 2: region
 
 # to run:
-# ./wrapper_.sh -g <gene_list> -a <gencode annotations> -r <region type: tss/genebody> -w <window size> -o <output dir>
+# ./get_gene_coords.sh -g <gene_list> -a <gencode annotations> -r <region type: tss/genebody> -w <window size> -o <output dir>
 #
 # example:
-# ./wrapper_.sh -g gene_list.txt -a gencode.v41.annotation.gtf -r genebody -w 100000 -o Output_Direcotory
+# ./get_gene_coords.sh -g gene_list.txt -a gencode.v41.annotation.gtf -r genebody -w 100000 -o Output_Direcotory
 
 while getopts "g:a:r:w:o:" option
 do
