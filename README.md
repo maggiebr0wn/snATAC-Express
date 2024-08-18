@@ -1,4 +1,4 @@
-# scATAC-Express
+# snATAC-Express
 
 ***Manuscript in prep***
 ----------
@@ -11,8 +11,8 @@ The objective of this project is to use scATAC-seq data to predict gene expressi
 ## Requirements
 
 ### Input data
-<li> scATAC-seq peak matrix </li>
-<li> scRNA-seq raw counts matrix </li>
+<li> snATAC-seq peak matrix </li>
+<li> snRNA-seq raw counts matrix </li>
 
 -------------------
 STEPS & HOW TO RUN
@@ -20,7 +20,7 @@ STEPS & HOW TO RUN
 
 Clone this repository, then enter it and download the gencode.v41.annotation.gtf.gz file:
 
-    cd scATAC-Express
+    cd snATAC-Express
     wget https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_41/gencode.v41.annotation.gtf.gz
     gunzip gencode.v41.annotation.gtf.gz
 
