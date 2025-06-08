@@ -1,5 +1,14 @@
 #!/usr/sbin/anaconda
 
+"""
+snATAC-Express Model Builders
+
+This module contains functions for building and evaluating machine learning models
+to predict gene expression from ATAC-seq data. It supports multiple model types
+and feature selection methods.
+"""
+
+from typing import Dict, List, Tuple, Union, Optional
 import joblib
 import lightgbm as lgbm
 import math
@@ -13,16 +22,50 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import StratifiedKFold, GroupKFold, GridSearchCV, RandomizedSearchCV
 from sklearn.model_selection import cross_val_score, KFold
 import xgboost as xgb
+import warnings
+from sklearn.exceptions import DataConversionWarning
+
+# Import custom feature selection functions
+from feature_selection import (
+    rf_ranker, xgb_ranker, lgbm_ranker, perm_ranker,
+    RF_dropcolumn_importance, LR_dropcolumn_importance,
+    XGB_dropcolumn_importance, LGBM_dropcolumn_importance
+)
 
 os.chdir("/storage/home/mfisher42/scProjects/Predict_GEX/Multitest_kfoldcv_95featselect_hyperparam_10312023")
-from feature_selection import rf_ranker, xgb_ranker, lgbm_ranker, perm_ranker, RF_dropcolumn_importance, LR_dropcolumn_importance, XGB_dropcolumn_importance, LGBM_dropcolumn_importance
 
 # 10-12-2023
 # This script contains functions which builds models and ranks features.
 # The general workflow is to use nested k-fold cross validation for hyperparameter tuning and model evaluation.
 
 # ============================================
-def RF_init_peakranker(model, best_params, func_peaks_df, func_gex_df,  gene_outdir, test, gene):
+def RF_init_peakranker(
+    model: RandomForestRegressor,
+    best_params: Dict[str, Union[int, float, str]],
+    func_peaks_df: pd.DataFrame,
+    func_gex_df: pd.DataFrame,
+    gene_outdir: str,
+    test: str,
+    gene: str
+) -> Tuple[int, pd.DataFrame, str]:
+    """
+    Initialize and run feature ranking for Random Forest model.
+
+    Args:
+        model: Trained Random Forest model
+        best_params: Dictionary of best hyperparameters
+        func_peaks_df: DataFrame of peak accessibility data
+        func_gex_df: DataFrame of gene expression data
+        gene_outdir: Output directory for gene-specific results
+        test: Type of feature ranking to perform ('rf_ranker', 'perm_ranker', or 'dropcol_ranker')
+        gene: Name of the target gene
+
+    Returns:
+        Tuple containing:
+        - Number of peaks
+        - DataFrame of sorted features by importance
+        - Output directory path
+    """
     if test == "rf_ranker":
         print("RF rf_ranker: " + gene)
         test_outdir = gene_outdir + "/" + "rf_ranker"
@@ -116,7 +159,20 @@ def LGBM_init_peakranker(model, best_params, func_peaks_df, func_gex_df,  gene_o
     return npeaks, sorted_features_df, test_outdir
 
 # ============================================
-def RFR_gridsearch(func_peaks_df, func_gex_df):
+def RFR_gridsearch(
+    func_peaks_df: pd.DataFrame,
+    func_gex_df: pd.DataFrame
+) -> Dict[str, Union[int, float, str]]:
+    """
+    Perform grid search for Random Forest Regressor hyperparameter optimization.
+
+    Args:
+        func_peaks_df: DataFrame of peak accessibility data
+        func_gex_df: DataFrame of gene expression data
+
+    Returns:
+        Dictionary of best hyperparameters found during grid search
+    """
     ### define parameter grid:
     gs_dict = {}
     # number of decision trees
@@ -276,45 +332,6 @@ def init_XGB_kfold_crossval(model, best_params, func_peaks_df, func_gex_df, gene
     return r2_fold_scores, peak_importance_dict, test_outdir
 
 # ============================================
-def init_XGB_kfold_crossval(model, best_params, func_peaks_df, func_gex_df, gene_outdir, test, gene):
-    num_kfold_columns = 3
-    folds_per_column = 5
-    skf_columns = [StratifiedKFold(n_splits = folds_per_column, shuffle = True, random_state = 0) for seed in range(num_kfold_columns)]
-    # Lists to store the fold scores
-    r2_fold_scores = []
-    peak_importance_dict = {}
-    # Perform cross-validation and store trained models
-    for column_idx, skf in enumerate(skf_columns):
-        for fold, (train_idx, test_idx) in enumerate(skf.split(func_peaks_df, func_gex_df[gene])):
-            X_train, y_train = func_peaks_df.iloc[train_idx], func_gex_df.iloc[train_idx]
-            X_test, y_test = func_peaks_df.iloc[test_idx], func_gex_df.iloc[test_idx]
-            # run model
-            model.fit(X_train, y_train)
-            # Predict on the test set
-            y_pred = model.predict(X_test)
-            # Evaluate the model
-            score = model.score(X_test, y_test)
-            r2_fold_scores.append(score)
-            # cross validation feature ranking
-            npeaks, sorted_features_df, test_outdir = XGB_init_peakranker(model, best_params, X_train, y_train, gene_outdir, test, gene)
-            # save predicted vs actual for k-fold
-            pred_act_dir = test_outdir + "/cross_validations_all_peaks"
-            if not os.path.exists(pred_act_dir):
-                os.makedirs(pred_act_dir)
-            y_test = y_test.copy()
-            y_test["Predicted"] = y_pred.tolist()
-            outname = pred_act_dir + "/Column_" + str(column_idx) + "_Fold_" + str(fold) + ".csv"
-            y_test.to_csv(outname)
-            # sort features
-            sorted_feats_dict = sorted_features_df.groupby("Peak")["Importance"].apply(list).to_dict()
-            for peak, importance_values in sorted_feats_dict.items():
-                if peak in peak_importance_dict:
-                    peak_importance_dict[peak].extend(importance_values)
-                else:
-                    peak_importance_dict[peak] = importance_values
-    return r2_fold_scores, peak_importance_dict, test_outdir
-
-# ============================================
 def init_LGBM_kfold_crossval(model, best_params, func_peaks_df, func_gex_df, gene_outdir, test, gene):
     num_kfold_columns = 3
     folds_per_column = 5
@@ -354,7 +371,18 @@ def init_LGBM_kfold_crossval(model, best_params, func_peaks_df, func_gex_df, gen
     return r2_fold_scores, peak_importance_dict, test_outdir
 
 # ============================================
-def avg_feature_importances(peak_importance_dict):
+def avg_feature_importances(
+    peak_importance_dict: Dict[str, List[float]]
+) -> pd.DataFrame:
+    """
+    Calculate average feature importance across cross-validation folds.
+
+    Args:
+        peak_importance_dict: Dictionary mapping peak names to lists of importance scores
+
+    Returns:
+        DataFrame containing peaks and their average importance scores, sorted by importance
+    """
     # Calculate the average of the values for each key in the dictionary
     average_importance_dict = {}
     for peak, importance_values in peak_importance_dict.items():
@@ -368,7 +396,33 @@ def avg_feature_importances(peak_importance_dict):
     return average_importance_df
 
 # ============================================
-def build_RFR_model(pb_peak_df, gex_peak_df, gene, gene_outdir, test):
+def build_RFR_model(
+    pb_peak_df: pd.DataFrame,
+    gex_peak_df: pd.DataFrame,
+    gene: str,
+    gene_outdir: str,
+    test: str
+) -> None:
+    """
+    Build and evaluate a Random Forest model for gene expression prediction.
+
+    This function:
+    1. Prepares the data
+    2. Performs hyperparameter optimization
+    3. Conducts k-fold cross-validation
+    4. Ranks features by importance
+    5. Saves models and results
+
+    Args:
+        pb_peak_df: DataFrame of pseudobulked peak accessibility data
+        gex_peak_df: DataFrame of pseudobulked gene expression data
+        gene: Name of the target gene
+        gene_outdir: Output directory for gene-specific results
+        test: Type of feature ranking to perform
+
+    Returns:
+        None. Results are saved to the specified output directory.
+    """
     warnings.filterwarnings(action = "ignore", category = DataConversionWarning)
     warnings.filterwarnings("ignore", category = UserWarning)
     # convert to numpy arrays
@@ -433,14 +487,6 @@ def build_RFR_model(pb_peak_df, gex_peak_df, gene, gene_outdir, test):
             # Evaluate the model
             score = model.score(X_test, y_test)
             r2_fold_scores.append(score)
-            # save predicted vs actual for k-fold
-            pred_act_dir = test_outdir + "/cross_validations_top95_peaks"
-            if not os.path.exists(pred_act_dir):
-                os.makedirs(pred_act_dir)
-            y_test = y_test.copy()
-            y_test["Predicted"] = y_pred.tolist()
-            outname = pred_act_dir + "/Column_" + str(column_idx) + "_Fold_" + str(fold) + ".csv"
-            y_test.to_csv(outname)
             # cross validation model feature ranking
             if test == "rf_ranker":
                 sorted_features_df = rf_ranker(model, gene, sub_func_peaks_df, test_outdir)

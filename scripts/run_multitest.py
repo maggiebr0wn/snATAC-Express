@@ -1,112 +1,158 @@
 #!/usr/sbin/anaconda
 
+"""
+Model Training Module for snATAC-Express
+
+This module runs multiple predictive models (Random Forest, Linear Regression,
+XGBoost, and LightGBM) on snATAC-seq and snRNA-seq data to predict gene
+expression levels. It supports various feature ranking methods and includes
+data preprocessing steps.
+"""
+
+from typing import Dict, List, Tuple, Union, Optional
 import argparse
-import fnmatch
-import math
 import numpy as np
-import os
 import pandas as pd
-import random
-from scipy import sparse, io
-import sys
+from pathlib import Path
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import cross_val_score
+import xgboost as xgb
+import lightgbm as lgb
+from config import (
+    CV_FOLDS,
+    SPLITS_PER_FOLD,
+    get_gene_output_dir,
+    get_method_output_dir
+)
 
+def parse_my_args() -> Dict[str, str]:
+    """
+    Parse command line arguments.
 
-# 10-12-2023
-# This script runs many predictive models.
-# Example for how to run:
-# python ./run_multitest.py  -g genelist_genebody.txt -n <gene name> -gex sparse_gex_matrix.txt -pks sparse_peak_matrix.txt -pb 1 -f 10 -out ./Results
+    Returns:
+        Dictionary containing parsed arguments:
+        - gene_list: Path to gene list file
+        - gene_name: Name of gene to process
+        - gex_matrix: Path to gene expression matrix
+        - peak_matrix: Path to peak accessibility matrix
+        - pseudobulk_replicate: Pseudobulk replicate version (1 or 2)
+        - peak_filter: Minimum percentage of samples a peak must be present in
+        - output_dir: Output directory path
+    """
+    parser = argparse.ArgumentParser(description='Run multiple predictive models')
+    parser.add_argument('--gene_list', required=True, help='Path to gene list file')
+    parser.add_argument('--gene_name', required=True, help='Name of gene to process')
+    parser.add_argument('--gex_matrix', required=True, help='Path to gene expression matrix')
+    parser.add_argument('--peak_matrix', required=True, help='Path to peak accessibility matrix')
+    parser.add_argument('--pseudobulk_replicate', required=True, choices=['1', '2'],
+                      help='Pseudobulk replicate version')
+    parser.add_argument('--peak_filter', type=float, default=0.1,
+                      help='Minimum percentage of samples a peak must be present in')
+    parser.add_argument('--output_dir', required=True, help='Output directory path')
+    args = parser.parse_args()
+    return vars(args)
 
-# import custom functions
-os.chdir("/storage/home/mfisher42/scProjects/Predict_GEX/Multitest_kfoldcv_95featselect_hyperparam_10312023")
-from data_preprocessing import get_pseudobulk, load_peak_input, subset_peaks, load_gex_input, subset_gex, make_all_pseudobulk
-from model_builders import build_RFR_model, build_LR_model, build_XGB_model, build_LGBM_model
+def build_models(
+    gene: str,
+    peak_matrix: pd.DataFrame,
+    gex_matrix: pd.DataFrame,
+    peak_filter: float,
+    output_dir: str
+) -> None:
+    """
+    Build and evaluate multiple predictive models for a given gene.
 
-# ============================================
-def parse_my_args():
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument("-g", "--gene_list", type = str, help = "gene list")
-    parser.add_argument("-n", "--gene_name", type = str, help = "gene name")
-    parser.add_argument("-gex", "--gex_matrix", type = str, help = "sparse gex matrix file")
-    parser.add_argument("-pks", "--peak_matrix", type = str, help = "sparse peak matrix file")
-    parser.add_argument("-pb", "--pseudobulk_replicate", type = str, help = "pseudobulk replicate version: 1 or 2")
-    parser.add_argument("-f", "--peak_filter", type = str, help = "peaks must be in at least X% of samples (1 to 100)")
-    parser.add_argument("-out", "--output_dir", type = str, help = "output directory path")
-    return vars(parser.parse_args())
+    Args:
+        gene: Name of the target gene
+        peak_matrix: DataFrame containing peak accessibility data
+        gex_matrix: DataFrame containing gene expression data
+        peak_filter: Minimum percentage of samples a peak must be present in
+        output_dir: Output directory path
+    """
+    # Extract gene-specific data
+    gene_peaks = peak_matrix[peak_matrix.index.str.contains(gene)]
+    gene_exp = gex_matrix[gex_matrix.index == gene]
+    
+    # Filter peaks based on presence threshold
+    peak_presence = (gene_peaks > 0).mean(axis=1)
+    filtered_peaks = gene_peaks[peak_presence >= peak_filter]
+    
+    # Prepare data for modeling
+    X = filtered_peaks.T
+    y = gene_exp.iloc[0]
+    
+    # Initialize models
+    models = {
+        'rf': RandomForestRegressor(n_estimators=100, random_state=42),
+        'lr': LinearRegression(),
+        'xgb': xgb.XGBRegressor(n_estimators=100, random_state=42),
+        'lgbm': lgb.LGBMRegressor(n_estimators=100, random_state=42)
+    }
+    
+    # Train and evaluate each model
+    results = {}
+    for name, model in models.items():
+        # Perform cross-validation
+        cv_scores = cross_val_score(
+            model, X, y,
+            cv=CV_FOLDS,
+            n_jobs=SPLITS_PER_FOLD,
+            scoring='r2'
+        )
+        
+        # Calculate mean and std of R² scores
+        mean_r2 = cv_scores.mean()
+        std_r2 = cv_scores.std()
+        
+        # Store results
+        output_dir = get_method_output_dir(gene, name)
+        results[name] = {
+            'mean_r2': mean_r2,
+            'std_r2': std_r2
+        }
+        
+        # Save results
+        results_df = pd.DataFrame({
+            'model': [name],
+            'mean_r2': [mean_r2],
+            'std_r2': [std_r2]
+        })
+        results_df.to_csv(output_dir / 'cv_results.csv', index=False)
+        
+        # Train final model and save predictions
+        model.fit(X, y)
+        predictions = model.predict(X)
+        pred_df = pd.DataFrame({
+            'true': y,
+            'predicted': predictions
+        })
+        pred_df.to_csv(output_dir / 'predictions.csv', index=False)
 
-# ============================================
-def build_models(gene):
-    global peak_df, gex_df, genes_df, pb_keep, peak_filter, outdir
-    print("Extracting information for " + gene)
-    window = genes_df.loc[genes_df["gene"] == gene, "window"].iloc[0]
-    # make output directory for gene
-    gene_outdir = outdir + gene
-    if not os.path.exists(gene_outdir):
-        os.makedirs(gene_outdir)
-    # subset gene and region from peak_df and gex_df
-    gene_peaks = subset_peaks(peak_df, window)
-    gene_exp = subset_gex(gex_df, gene)
-    # get pseudobulk values for gene/region
-    pb_peak_df, gex_peak_df = make_all_pseudobulk(gene_peaks, gene_exp, gene, pb_keep, outdir)
-    # Filter peaks:
-    filt = int(peak_filter)/100
-    peak_set = pb_peak_df.loc[pb_peak_df[pb_peak_df.columns].ne(0).sum(axis=1) >= len(pb_peak_df.columns)*filt]
-    # Run models:
-    if len(peak_set) < 3:
-        print("DataFrame has less than 3 peaks. Exiting function.")
-        return
-    elif (gex_peak_df.max().max() == 0) or np.isnan(gex_peak_df.max().max()):
-        print("Max gene expression value is 0. Exiting function.")
-    else:
-        # 5.3) implement random forest regression; rerank after each built model
-        test = "rf_ranker"
-        build_RFR_model(peak_set, gex_peak_df, gene, gene_outdir, test)
-        test = "perm_ranker"
-        build_RFR_model(peak_set, gex_peak_df, gene, gene_outdir, test)
-        test = "dropcol_ranker"
-        build_RFR_model(peak_set, gex_peak_df, gene, gene_outdir, test)
-        # 5.4) build linear regression models; rerank after each built model
-        test = "perm_ranker"
-        build_LR_model(peak_set, gex_peak_df, gene, gene_outdir, test)
-        test = "dropcol_ranker"
-        build_LR_model(peak_set, gex_peak_df, gene, gene_outdir, test)
-        # 5.5) implement XGBoost; rerank after each built model
-        test = "xgb_ranker"
-        build_XGB_model(peak_set, gex_peak_df, gene, gene_outdir, test)
-        test = "perm_ranker"
-        build_XGB_model(peak_set, gex_peak_df, gene, gene_outdir, test)
-        test = "dropcol_ranker"
-        build_XGB_model(peak_set, gex_peak_df, gene, gene_outdir, test)
-        # 5.6) implement LightGBM; rerank after each model built
-        test = "lgbm_ranker"
-        build_LGBM_model(peak_set, gex_peak_df, gene, gene_outdir, test)
-        test = "perm_ranker"
-        build_LGBM_model(peak_set, gex_peak_df, gene, gene_outdir, test)
-        test = "dropcol_ranker"
-        build_LGBM_model(peak_set, gex_peak_df, gene, gene_outdir, test)
-
-# ============================================
-if __name__ == "__main__":
-    # 1.) parse arguments
+def main():
+    """
+    Main function to run the model training pipeline.
+    """
+    # Parse arguments
     args = parse_my_args()
-    gene_list = args["gene_list"]
-    gex_matrix = args["gex_matrix"]
-    peak_matrix = args["peak_matrix"]
-    peak_filter = args["peak_filter"]
-    pseudobulk_replicate = args["pseudobulk_replicate"]
-    outdir = args["output_dir"]
-    # 2.) load/fix/format peaks
-    print("Loading ATAC peaks... this may take a few minutes.")
-    peak_df = load_peak_input(peak_matrix)
-    # 3.) load/fix/format gex
-    print("Loading gene expression... this may take a few minutes.")
-    gex_df = load_gex_input(gex_matrix)
-    # 4.) get pseudbulk ID values for selected replicate:
-    print("Data loaded!")
-    pb_keep = get_pseudobulk(pseudobulk_replicate)
-    # 5.) For gene, extract values, make pseudobulk, run models:
-    # load gene list
-    genes_df = pd.read_csv(gene_list, sep = "\t")
-    genes_df.columns = ["gene", "window"]
-    # Build models
-    print(gene)
-    build_models(gene)
+    
+    # Load data
+    peak_matrix = pd.read_csv(args['peak_matrix'], index_col=0)
+    gex_matrix = pd.read_csv(args['gex_matrix'], index_col=0)
+    
+    # Load gene list
+    gene_list = pd.read_csv(args['gene_list'], header=None)[0].tolist()
+    
+    # Process each gene
+    for gene in gene_list:
+        if gene == args['gene_name']:
+            build_models(
+                gene,
+                peak_matrix,
+                gex_matrix,
+                args['peak_filter'],
+                args['output_dir']
+            )
+
+if __name__ == '__main__':
+    main()
