@@ -38,12 +38,15 @@ snATAC-Express is a machine learning-based pipeline that leverages single-nucleu
 
 We recommend using [conda](https://docs.conda.io/en/latest/) to manage your Python environment and dependencies for snATAC-Express.
 
-#### 1. Create a new environment to support
+#### 1. Create a new environment with dependencies
 
 ```bash
-conda create -n snatacexpress -c conda-forge --file requirements.txt
+conda create -n snatacexpress -c conda-forge python=3.8
 conda activate snatacexpress
+
+conda install -c conda-forge numpy pandas scipy scikit-learn xgboost lightgbm pyyaml jupyter matplotlib seaborn statsmodels h5py typing-extensions
 ```
+
 
 #### 2. Verify installation
 
