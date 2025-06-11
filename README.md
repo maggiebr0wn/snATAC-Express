@@ -38,11 +38,11 @@ snATAC-Express is a machine learning-based pipeline that leverages single-nucleu
 
 We recommend using [conda](https://docs.conda.io/en/latest/) to manage your Python environment and dependencies for snATAC-Express.
 
-#### 1. Create a new environment to support dependences
+#### 1. Create a new environment to support
 
 ```bash
-conda env create -f environment.yml
-conda activate snatac-express
+conda create -n snatacexpress -c conda-forge --file requirements.txt
+conda activate snatacexpress
 ```
 
 #### 2. Verify installation
@@ -308,3 +308,19 @@ The `example_data` directory contains sample input files:
 - Genomic coordinates should be in the same format as your reference genome
 - Ensure sufficient memory for handling large sparse matrices
 - Group coverages CSV should be complete (no missing values) and properly formatted
+
+# Conda requirements for snATAC-Express
+# Create the environment with:
+#   mamba create -n snatacexpress -c conda-forge --file requirements.txt
+
+python=3.8
+numpy
+pandas
+scipy
+scikit-learn
+xgboost
+lightgbm
+pyyaml
+jupyter
+matplotlib
+seaborn
