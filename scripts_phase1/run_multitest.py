@@ -57,6 +57,8 @@ def parse_my_args():
     parser.add_argument("-pks", "--peak_matrix", type = str, help = "sparse peak matrix file")
     parser.add_argument("-pb", "--pseudobulk_replicate", type = str, help = "pseudobulk replicate version: 1 or 2")
     parser.add_argument("-out", "--output_dir", type = str, help = "output directory path")
+    parser.add_argument("-gc", "--group_coverages", type=str, default=None,
+                        help="Path to group_coverages.csv (optional, otherwise resolved inside script)")
     return vars(parser.parse_args())
 
 
@@ -75,7 +77,6 @@ def build_models(gene):
     # get pseudobulk values for gene/region
     pb_peak_df, gex_peak_df = make_all_pseudobulk(gene_peaks, gene_exp, gene, pb_keep, outdir, peak_df, gex_df)
     # Filter peaks:
-    #peak_set = pb_peak_df
     peak_set = pb_peak_df.loc[pb_peak_df[pb_peak_df.columns].ne(0).sum(axis=1) >= len(pb_peak_df.columns)*.1]
     #filt50perc_peaks = pb_peak_df.loc[pb_peak_df[pb_peak_df.columns].ne(0).sum(axis=1) >= len(pb_peak_df.columns)*.5]
     # For each set of peaks, run models:
@@ -140,6 +141,9 @@ if __name__ == "__main__":
     peak_matrix = args["peak_matrix"]
     gene = args["gene_name"]
     pseudobulk_replicate = args["pseudobulk_replicate"]
+    group_coverages_path = args.get("group_coverages")
+    if group_coverages_path is None:
+        group_coverages_path = os.path.join(ROOT_DIR, "example_data/input_data/group_coverages.csv")
     outdir = args["output_dir"].rstrip("/") + "/"
     # 2.) load/fix/format peaks
     print("Loading ATAC peaks... this may take a few minutes.")
@@ -149,7 +153,7 @@ if __name__ == "__main__":
     gex_df = load_gex_input(gex_matrix)
     # 4.) get pseudbulk ID values for selected replicate:
     print("Data loaded!")
-    pb_keep = get_pseudobulk(pseudobulk_replicate)
+    pb_keep = get_pseudobulk(pseudobulk_replicate, group_coverages_csv=group_coverages_path)
     # 5.) For each gene, extract values, make pseudobulk, run models:
     # intiate summary output
     #columnnames = ["gene", "celltype", "method", "peak_filter", "npeaks_kept", "cv_R2"]

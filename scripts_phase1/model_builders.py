@@ -23,7 +23,7 @@ if THIS_DIR not in os.sys.path:
     os.sys.path.insert(0, THIS_DIR)
 
 # Import ranking utilities from sibling module
-from .feature_selection import (
+from scripts.feature_selection import (
     rf_ranker,
     xgb_ranker,
     lgbm_ranker,
