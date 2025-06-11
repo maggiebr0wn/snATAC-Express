@@ -15,26 +15,61 @@ import random
 from scipy import sparse, io
 import statsmodels.api as sm
 import sys
+import warnings
 
 
 # ============================================
-def get_pseudobulk(pseudobulk_replicate):
-    # pseduobulk info; filter for >=10 cells and Rep1 or Rep2
-    pb_info = pd.read_csv("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/group_coverages.csv", sep = ",")
-    rep = str("Rep" + pseudobulk_replicate)
+# New helper to resolve paths relative to a base directory
+DEFAULT_INPUT_DIR = os.getenv("SNATAC_EXPRESS_INPUT", os.getcwd())
+
+def _resolve_path(filename: str, input_dir: str = None):
+    """Return `filename` if it is an absolute path otherwise
+    join it to the provided `input_dir` or to the DEFAULT_INPUT_DIR.
+    Raises FileNotFoundError if the resulting path does not exist."""
+    if os.path.isabs(filename):
+        path = filename
+    else:
+        path = os.path.join(input_dir or DEFAULT_INPUT_DIR, filename)
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Required file not found: {path}")
+    return path
+
+
+# ============================================
+def get_pseudobulk(pseudobulk_replicate, group_coverages_csv="group_coverages.csv", input_dir=None):
+    """Return DataFrame filtered for the requested replicate. The `group_coverages_csv`
+    can be given as an absolute path or a filename relative to `input_dir`."""
+    pb_path = _resolve_path(group_coverages_csv, input_dir)
+    pb_info = pd.read_csv(pb_path, sep=",")
+    rep = f"Rep{pseudobulk_replicate}"
     pb_rep = pb_info[pb_info.PB_Name.str.contains(rep)]
-    pb_keep = pb_rep[pb_rep["CellNames"].str.len()/29 >= 10] # 29 is length of each cell barcode; keep min 10 cells per PB
+    pb_keep = pb_rep[pb_rep["CellNames"].str.len()/29 >= 10]
     return pb_keep
 
 
 # ============================================
-def load_peak_input(peak_matrix):
-    ## load input, format into DF for gene of interest
-    sparse_peak_matrix = io.mmread(peak_matrix) # this step takes a few minutes
-    sparse_peak_matrix = sparse_peak_matrix.astype(np.uint8) # mem efficient datatype
+def load_peak_input(peak_matrix, input_dir=None):
+    """Load peak matrix (MM coordinates). Expects row/col name helper files in the
+    same directory as `peak_matrix` or relative to `input_dir`."""
+    peak_matrix = _resolve_path(peak_matrix, input_dir)
+    sparse_peak_matrix = io.mmread(peak_matrix).astype(np.uint8)
     pm_dense = sparse_peak_matrix.toarray()
-    coords = np.genfromtxt("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/sparse_peak_matrix_rownames.txt", dtype=str)
-    col_names = np.genfromtxt("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/sparse_peak_matrix_colnames.txt", dtype=str, comments = "+")
+    # Infer directory for annotation files
+    base_dir = os.path.dirname(peak_matrix) if input_dir is None else input_dir
+    coords = np.genfromtxt(_resolve_path("sparse_peak_matrix_rownames.txt", base_dir), dtype=str)
+    coords = np.atleast_1d(coords)
+    col_names = np.genfromtxt(_resolve_path("sparse_peak_matrix_colnames.txt", base_dir), dtype=str, comments="+")
+    # ensure column names match number of columns in matrix
+    n_cols = pm_dense.shape[1]
+    if len(col_names) != n_cols:
+        warnings.warn(
+            f"Mismatch between #columns in peak matrix ({n_cols}) and length of col_names ({len(col_names)}). "
+            "Truncating or padding column names.", RuntimeWarning
+        )
+        if len(col_names) >= n_cols:
+            col_names = col_names[:n_cols]
+        else:
+            col_names = np.concatenate([col_names, [f"cell_{i}" for i in range(len(col_names), n_cols)]])
     peak_df = pd.DataFrame(pm_dense, columns=col_names, index=coords)
     return peak_df
 
@@ -67,13 +102,25 @@ def subset_peaks(peak_df, window):
 
 
 # ============================================
-def load_gex_input(gex_matrix):
-    ## load input, format into DF for gene of interest
-    sparse_gex_matrix = io.mmread(gex_matrix) # this step takes a few minutes
-    sparse_gex_matrix = sparse_gex_matrix.astype(np.uint8) # mem efficient datatype
+def load_gex_input(gex_matrix, input_dir=None):
+    gex_matrix = _resolve_path(gex_matrix, input_dir)
+    sparse_gex_matrix = io.mmread(gex_matrix).astype(np.uint8)
     gm_dense = sparse_gex_matrix.toarray()
-    genes = np.genfromtxt("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/sparse_gex_matrix_rownames.txt", dtype=str)
-    col_names = np.genfromtxt("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/sparse_gex_matrix_colnames.txt", dtype=str, comments = "+")
+    base_dir = os.path.dirname(gex_matrix) if input_dir is None else input_dir
+    genes = np.genfromtxt(_resolve_path("sparse_gex_matrix_rownames.txt", base_dir), dtype=str)
+    genes = np.atleast_1d(genes)
+    col_names = np.genfromtxt(_resolve_path("sparse_gex_matrix_colnames.txt", base_dir), dtype=str, comments="+")
+    # ensure columns match
+    n_cols = gm_dense.shape[1]
+    if len(col_names) != n_cols:
+        warnings.warn(
+            f"Mismatch between #columns in gex matrix ({n_cols}) and length of col_names ({len(col_names)}). "
+            "Truncating or padding.", RuntimeWarning
+        )
+        if len(col_names) >= n_cols:
+            col_names = col_names[:n_cols]
+        else:
+            col_names = np.concatenate([col_names, [f"cell_{i}" for i in range(len(col_names), n_cols)]])
     gex_df = pd.DataFrame(gm_dense, columns=col_names, index=genes)
     return gex_df
 
@@ -92,13 +139,19 @@ def make_all_pseudobulk(gene_peaks, gene_exp, gene, pb_keep, outdir, peak_df, ge
     gex_peak_df = pd.DataFrame()
     # iterative through pseudobulk groups
     for pb_group in pb_keep.PB_Name:
-        cellnames = eval(pb_keep[pb_keep.PB_Name == pb_group].CellNames.tolist()[0])
+        cellnames_raw = pb_keep[pb_keep.PB_Name == pb_group].CellNames.tolist()[0]
+        cellnames = eval(cellnames_raw) if isinstance(cellnames_raw, str) else cellnames_raw
+        # keep only cell IDs that exist in the matrices
+        valid_cells = [c for c in cellnames if c in gene_peaks.columns]
+        if len(valid_cells) == 0:
+            # skip this pseudobulk if nothing matches (common with toy example data)
+            continue
         # extract pb_group from peak_mat, sum peak values
-        peak_subset = gene_peaks[cellnames].sum(axis = 1).to_frame()
+        peak_subset = gene_peaks[valid_cells].sum(axis=1).to_frame()
         peak_subset.columns = [pb_group]
-        pb_peak_df = pd.concat([pb_peak_df, peak_subset], axis = 1)
+        pb_peak_df = pd.concat([pb_peak_df, peak_subset], axis=1)
         # extract pb_group from gex_mat, average expression values
-        gex_subset = gene_exp[cellnames].sum(axis = 1).to_frame()
+        gex_subset = gene_exp[valid_cells].sum(axis=1).to_frame()
         gex_subset.columns = [pb_group]
         gex_peak_df = pd.concat([gex_peak_df, gex_subset], axis=1)
     ## normalize matrices
@@ -117,25 +170,49 @@ def make_all_pseudobulk(gene_peaks, gene_exp, gene, pb_keep, outdir, peak_df, ge
 
 
 # ============================================
-def load_independent_peaks(test_peak_matrix):
-    # PEAKS
-    sparse_peak_matrix = io.mmread(test_peak_matrix) # this step takes a few minutes
-    sparse_peak_matrix = sparse_peak_matrix.astype(np.uint8) # mem efficient datatype
+def load_independent_peaks(test_peak_matrix, input_dir=None):
+    test_peak_matrix = _resolve_path(test_peak_matrix, input_dir)
+    sparse_peak_matrix = io.mmread(test_peak_matrix).astype(np.uint8)
     pm_dense = sparse_peak_matrix.toarray()
-    coords = np.genfromtxt("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/sparse_peak_matrix_rownames.txt", dtype=str)
-    col_names = np.genfromtxt("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/sparse_peak_matrix_colnames.txt", dtype=str, comments = "+")
+    base_dir = os.path.dirname(test_peak_matrix) if input_dir is None else input_dir
+    coords = np.genfromtxt(_resolve_path("sparse_peak_matrix_rownames.txt", base_dir), dtype=str)
+    coords = np.atleast_1d(coords)
+    col_names = np.genfromtxt(_resolve_path("sparse_peak_matrix_colnames.txt", base_dir), dtype=str, comments="+")
+    # ensure column names match number of columns in matrix
+    n_cols = pm_dense.shape[1]
+    if len(col_names) != n_cols:
+        warnings.warn(
+            f"Mismatch between #columns in peak matrix ({n_cols}) and length of col_names ({len(col_names)}). "
+            "Truncating or padding column names.", RuntimeWarning
+        )
+        if len(col_names) >= n_cols:
+            col_names = col_names[:n_cols]
+        else:
+            col_names = np.concatenate([col_names, [f"cell_{i}" for i in range(len(col_names), n_cols)]])
     test_peak_df = pd.DataFrame(pm_dense, columns=col_names, index=coords)
     return test_peak_df
 
 
 # ============================================
-def load_independent_gex_(test_gex_matrix):
-    ## load input, format into DF for gene of interest
-    sparse_gex_matrix = io.mmread(test_gex_matrix) # this step takes a few minutes
-    sparse_gex_matrix = sparse_gex_matrix.astype(np.uint8) # mem efficient datatype
+def load_independent_gex_(test_gex_matrix, input_dir=None):
+    test_gex_matrix = _resolve_path(test_gex_matrix, input_dir)
+    sparse_gex_matrix = io.mmread(test_gex_matrix).astype(np.uint8)
     gm_dense = sparse_gex_matrix.toarray()
-    genes = np.genfromtxt("/storage/home/mfisher42/scProjects/Predict_GEX/Multitest_kfoldcv_95featselect_hyperparam_10perc_parallel_02082024/test_data/script-output/sparse_gex_matrix_rownames.txt", dtype=str)
-    col_names = np.genfromtxt("/storage/home/mfisher42/scProjects/Predict_GEX/Multitest_kfoldcv_95featselect_hyperparam_10perc_parallel_02082024/test_data/script-output/sparse_gex_matrix_colnames.txt", dtype=str, comments = "+")
+    base_dir = os.path.dirname(test_gex_matrix) if input_dir is None else input_dir
+    genes = np.genfromtxt(_resolve_path("sparse_gex_matrix_rownames.txt", base_dir), dtype=str)
+    genes = np.atleast_1d(genes)
+    col_names = np.genfromtxt(_resolve_path("sparse_gex_matrix_colnames.txt", base_dir), dtype=str, comments="+")
+    # ensure columns match
+    n_cols = gm_dense.shape[1]
+    if len(col_names) != n_cols:
+        warnings.warn(
+            f"Mismatch between #columns in gex matrix ({n_cols}) and length of col_names ({len(col_names)}). "
+            "Truncating or padding.", RuntimeWarning
+        )
+        if len(col_names) >= n_cols:
+            col_names = col_names[:n_cols]
+        else:
+            col_names = np.concatenate([col_names, [f"cell_{i}" for i in range(len(col_names), n_cols)]])
     test_gex_df = pd.DataFrame(gm_dense, columns=col_names, index=genes)
     return test_gex_df
 

@@ -1,7 +1,6 @@
 #!/usr/bin/bash
 
-# 10-20-2022
-# This script pbtaines gene coordinates for a specified window around a gene or a gene's transcription start site
+# This script obtains gene coordinates for a specified window around a gene or a gene's transcription start site
 # Take in gene list and GENCODE annotations, create a new file with this format:
 #   Column 1: gene
 #   Column 2: region

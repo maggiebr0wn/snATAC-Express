@@ -5,23 +5,34 @@ import lightgbm as lgbm
 import math
 import numpy as np
 import pandas as pd
+import os
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error
-import os
 from sklearn.inspection import permutation_importance
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import StratifiedKFold, GroupKFold, GridSearchCV, RandomizedSearchCV
 from sklearn.model_selection import cross_val_score, KFold
 import xgboost as xgb
 
-
 import warnings
 from sklearn.exceptions import DataConversionWarning
 
+# Ensure scripts_phase1 directory is on PYTHONPATH for sibling imports
+THIS_DIR = os.path.dirname(__file__)
+if THIS_DIR not in os.sys.path:
+    os.sys.path.insert(0, THIS_DIR)
 
-os.chdir("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/SLE_Genes_02062024/Multitest_kfoldcv_95featselect_hyperparam_10perc_parallel_02082024")
-from feature_selection import rf_ranker, xgb_ranker, lgbm_ranker, perm_ranker, RF_dropcolumn_importance, LR_dropcolumn_importance, XGB_dropcolumn_importance, LGBM_dropcolumn_importance
-
+# Import ranking utilities from sibling module
+from scripts.feature_selection import (
+    rf_ranker,
+    xgb_ranker,
+    lgbm_ranker,
+    perm_ranker,
+    RF_dropcolumn_importance,
+    LR_dropcolumn_importance,
+    XGB_dropcolumn_importance,
+    LGBM_dropcolumn_importance,
+)
 
 # 10-12-2023
 # This script contains functions which builds models and ranks features.
@@ -450,14 +461,6 @@ def build_RFR_model(pb_peak_df, gex_peak_df, gene, gene_outdir, test):
             # Evaluate the model
             score = model.score(X_test, y_test)
             r2_fold_scores.append(score)
-            # save predicted vs actual for k-fold
-            pred_act_dir = test_outdir + "/cross_validations_top95_peaks"
-            if not os.path.exists(pred_act_dir):
-                os.makedirs(pred_act_dir)
-            y_test = y_test.copy()
-            y_test["Predicted"] = y_pred.tolist()
-            outname = pred_act_dir + "/Column_" + str(column_idx) + "_Fold_" + str(fold) + ".csv"
-            y_test.to_csv(outname)
             # cross validation model feature ranking
             if test == "rf_ranker":
                 sorted_features_df = rf_ranker(model, gene, sub_func_peaks_df, test_outdir)
