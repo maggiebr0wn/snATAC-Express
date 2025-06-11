@@ -18,23 +18,45 @@ import sys
 
 
 # ============================================
-def get_pseudobulk(pseudobulk_replicate):
-    # pseduobulk info; filter for >=10 cells and Rep1 or Rep2
-    pb_info = pd.read_csv("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/group_coverages.csv", sep = ",")
-    rep = str("Rep" + pseudobulk_replicate)
+# New helper to resolve paths relative to a base directory
+DEFAULT_INPUT_DIR = os.getenv("SNATAC_EXPRESS_INPUT", os.getcwd())
+
+def _resolve_path(filename: str, input_dir: str = None):
+    """Return `filename` if it is an absolute path otherwise
+    join it to the provided `input_dir` or to the DEFAULT_INPUT_DIR.
+    Raises FileNotFoundError if the resulting path does not exist."""
+    if os.path.isabs(filename):
+        path = filename
+    else:
+        path = os.path.join(input_dir or DEFAULT_INPUT_DIR, filename)
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Required file not found: {path}")
+    return path
+
+
+# ============================================
+def get_pseudobulk(pseudobulk_replicate, group_coverages_csv="group_coverages.csv", input_dir=None):
+    """Return DataFrame filtered for the requested replicate. The `group_coverages_csv`
+    can be given as an absolute path or a filename relative to `input_dir`."""
+    pb_path = _resolve_path(group_coverages_csv, input_dir)
+    pb_info = pd.read_csv(pb_path, sep=",")
+    rep = f"Rep{pseudobulk_replicate}"
     pb_rep = pb_info[pb_info.PB_Name.str.contains(rep)]
-    pb_keep = pb_rep[pb_rep["CellNames"].str.len()/29 >= 10] # 29 is length of each cell barcode; keep min 10 cells per PB
+    pb_keep = pb_rep[pb_rep["CellNames"].str.len()/29 >= 10]
     return pb_keep
 
 
 # ============================================
-def load_peak_input(peak_matrix):
-    ## load input, format into DF for gene of interest
-    sparse_peak_matrix = io.mmread(peak_matrix) # this step takes a few minutes
-    sparse_peak_matrix = sparse_peak_matrix.astype(np.uint8) # mem efficient datatype
+def load_peak_input(peak_matrix, input_dir=None):
+    """Load peak matrix (MM coordinates). Expects row/col name helper files in the
+    same directory as `peak_matrix` or relative to `input_dir`."""
+    peak_matrix = _resolve_path(peak_matrix, input_dir)
+    sparse_peak_matrix = io.mmread(peak_matrix).astype(np.uint8)
     pm_dense = sparse_peak_matrix.toarray()
-    coords = np.genfromtxt("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/sparse_peak_matrix_rownames.txt", dtype=str)
-    col_names = np.genfromtxt("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/sparse_peak_matrix_colnames.txt", dtype=str, comments = "+")
+    # Infer directory for annotation files
+    base_dir = os.path.dirname(peak_matrix) if input_dir is None else input_dir
+    coords = np.genfromtxt(_resolve_path("sparse_peak_matrix_rownames.txt", base_dir), dtype=str)
+    col_names = np.genfromtxt(_resolve_path("sparse_peak_matrix_colnames.txt", base_dir), dtype=str, comments="+")
     peak_df = pd.DataFrame(pm_dense, columns=col_names, index=coords)
     return peak_df
 
@@ -67,13 +89,13 @@ def subset_peaks(peak_df, window):
 
 
 # ============================================
-def load_gex_input(gex_matrix):
-    ## load input, format into DF for gene of interest
-    sparse_gex_matrix = io.mmread(gex_matrix) # this step takes a few minutes
-    sparse_gex_matrix = sparse_gex_matrix.astype(np.uint8) # mem efficient datatype
+def load_gex_input(gex_matrix, input_dir=None):
+    gex_matrix = _resolve_path(gex_matrix, input_dir)
+    sparse_gex_matrix = io.mmread(gex_matrix).astype(np.uint8)
     gm_dense = sparse_gex_matrix.toarray()
-    genes = np.genfromtxt("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/sparse_gex_matrix_rownames.txt", dtype=str)
-    col_names = np.genfromtxt("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/sparse_gex_matrix_colnames.txt", dtype=str, comments = "+")
+    base_dir = os.path.dirname(gex_matrix) if input_dir is None else input_dir
+    genes = np.genfromtxt(_resolve_path("sparse_gex_matrix_rownames.txt", base_dir), dtype=str)
+    col_names = np.genfromtxt(_resolve_path("sparse_gex_matrix_colnames.txt", base_dir), dtype=str, comments="+")
     gex_df = pd.DataFrame(gm_dense, columns=col_names, index=genes)
     return gex_df
 
@@ -117,25 +139,25 @@ def make_all_pseudobulk(gene_peaks, gene_exp, gene, pb_keep, outdir, peak_df, ge
 
 
 # ============================================
-def load_independent_peaks(test_peak_matrix):
-    # PEAKS
-    sparse_peak_matrix = io.mmread(test_peak_matrix) # this step takes a few minutes
-    sparse_peak_matrix = sparse_peak_matrix.astype(np.uint8) # mem efficient datatype
+def load_independent_peaks(test_peak_matrix, input_dir=None):
+    test_peak_matrix = _resolve_path(test_peak_matrix, input_dir)
+    sparse_peak_matrix = io.mmread(test_peak_matrix).astype(np.uint8)
     pm_dense = sparse_peak_matrix.toarray()
-    coords = np.genfromtxt("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/sparse_peak_matrix_rownames.txt", dtype=str)
-    col_names = np.genfromtxt("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/input_data/sparse_peak_matrix_colnames.txt", dtype=str, comments = "+")
+    base_dir = os.path.dirname(test_peak_matrix) if input_dir is None else input_dir
+    coords = np.genfromtxt(_resolve_path("sparse_peak_matrix_rownames.txt", base_dir), dtype=str)
+    col_names = np.genfromtxt(_resolve_path("sparse_peak_matrix_colnames.txt", base_dir), dtype=str, comments="+")
     test_peak_df = pd.DataFrame(pm_dense, columns=col_names, index=coords)
     return test_peak_df
 
 
 # ============================================
-def load_independent_gex_(test_gex_matrix):
-    ## load input, format into DF for gene of interest
-    sparse_gex_matrix = io.mmread(test_gex_matrix) # this step takes a few minutes
-    sparse_gex_matrix = sparse_gex_matrix.astype(np.uint8) # mem efficient datatype
+def load_independent_gex_(test_gex_matrix, input_dir=None):
+    test_gex_matrix = _resolve_path(test_gex_matrix, input_dir)
+    sparse_gex_matrix = io.mmread(test_gex_matrix).astype(np.uint8)
     gm_dense = sparse_gex_matrix.toarray()
-    genes = np.genfromtxt("/storage/home/mfisher42/scProjects/Predict_GEX/Multitest_kfoldcv_95featselect_hyperparam_10perc_parallel_02082024/test_data/script-output/sparse_gex_matrix_rownames.txt", dtype=str)
-    col_names = np.genfromtxt("/storage/home/mfisher42/scProjects/Predict_GEX/Multitest_kfoldcv_95featselect_hyperparam_10perc_parallel_02082024/test_data/script-output/sparse_gex_matrix_colnames.txt", dtype=str, comments = "+")
+    base_dir = os.path.dirname(test_gex_matrix) if input_dir is None else input_dir
+    genes = np.genfromtxt(_resolve_path("sparse_gex_matrix_rownames.txt", base_dir), dtype=str)
+    col_names = np.genfromtxt(_resolve_path("sparse_gex_matrix_colnames.txt", base_dir), dtype=str, comments="+")
     test_gex_df = pd.DataFrame(gm_dense, columns=col_names, index=genes)
     return test_gex_df
 

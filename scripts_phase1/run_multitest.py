@@ -2,7 +2,6 @@
 
 
 import argparse
-import fnmatch
 import math
 import multiprocessing
 import numpy as np
@@ -10,7 +9,6 @@ import os
 import pandas as pd
 import random
 from scipy import sparse, io
-import statsmodels.api as sm
 import sys
 
 
@@ -25,11 +23,29 @@ random.seed(12345)
 # This script runs many predictive models.
 
 
-# import custom functions
-os.chdir("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/SLE_Genes_02062024/Multitest_kfoldcv_95featselect_hyperparam_10perc_parallel_02082024")
-from data_preprocessing import get_pseudobulk, load_peak_input, subset_peaks, load_gex_input, subset_gex, make_all_pseudobulk
-from model_builders import build_RFR_model, build_LR_model, build_XGB_model, build_LGBM_model
-from feature_selection import feature_selector
+# Add project root to PYTHONPATH for module imports when executed directly
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+# Import custom utilities
+from scripts.data_preprocessing import (
+    get_pseudobulk,
+    load_peak_input,
+    subset_peaks,
+    load_gex_input,
+    subset_gex,
+    make_all_pseudobulk,
+)
+
+# Local feature/model helpers remain in this directory
+from scripts_phase1.model_builders import (
+    build_RFR_model,
+    build_LR_model,
+    build_XGB_model,
+    build_LGBM_model,
+)
+from scripts.feature_selection import feature_selector
 
 
 # ============================================
@@ -117,7 +133,6 @@ def build_models(gene):
 
 # ============================================
 if __name__ == "__main__":
-    os.chdir("/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/SLE_Genes_02062024/Multitest_kfoldcv_95featselect_hyperparam_10perc_parallel_02082024/")
     # 1.) parse arguments
     args = parse_my_args()
     gene_list = args["gene_list"]
@@ -125,8 +140,7 @@ if __name__ == "__main__":
     peak_matrix = args["peak_matrix"]
     gene = args["gene_name"]
     pseudobulk_replicate = args["pseudobulk_replicate"]
-    outdir = args["output_dir"]
-    outdir = "/storage/home/hcoda1/6/mfisher42/scratch/scATAC_Express/SLE_Genes_02062024/Multitest_kfoldcv_95featselect_hyperparam_10perc_parallel_02082024/Results/"
+    outdir = args["output_dir"].rstrip("/") + "/"
     # 2.) load/fix/format peaks
     print("Loading ATAC peaks... this may take a few minutes.")
     peak_df = load_peak_input(peak_matrix)
