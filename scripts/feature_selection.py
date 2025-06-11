@@ -1,234 +1,250 @@
 #!/usr/sbin/anaconda
 
-"""
-Feature Selection Module for snATAC-Express
 
-This module implements various feature selection methods for identifying important
-regulatory regions in single-cell ATAC-seq data that predict gene expression levels.
-"""
-
-from typing import Dict, List, Tuple, Union, Optional
-import argparse
-import numpy as np
+import lightgbm as lgbm
+import os
 import pandas as pd
-from pathlib import Path
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error
 from sklearn.inspection import permutation_importance
+from sklearn.ensemble import RandomForestRegressor
 import xgboost as xgb
-import lightgbm as lgb
-from config import (
-    FEATURE_IMPORTANCE_THRESHOLD,
-    get_gene_output_dir,
-    get_method_output_dir
-)
 
-def rf_ranker(
-    X: pd.DataFrame,
-    y: pd.Series,
-    gene: str,
-    method: str = "rf"
-) -> pd.DataFrame:
-    """
-    Rank features using Random Forest importance scores.
 
-    Args:
-        X: Feature matrix (peak accessibility data)
-        y: Target vector (gene expression data)
-        gene: Name of the target gene
-        method: Method identifier for output files
+# 10-16-2023
+# This script contains feature ranking functions to be imported to the main predict_gex.py script.
 
-    Returns:
-        DataFrame containing feature importance scores
-    """
-    # Train Random Forest model
-    rf = RandomForestRegressor(n_estimators=100, random_state=42)
-    rf.fit(X, y)
-    
-    # Get feature importance scores
-    importance = pd.DataFrame({
-        'feature': X.columns,
-        'importance': rf.feature_importances_
-    })
-    importance = importance.sort_values('importance', ascending=False)
-    
-    # Save results
-    output_dir = get_method_output_dir(gene, method)
-    importance.to_csv(output_dir / 'feature_importance.csv', index=False)
-    
-    return importance
+# ============================================
+def rf_ranker(model, gene, func_peaks_df, outdir): # rank features using random forest regression
+    # assess features
+    feature_importances = model.feature_importances_
+    sorted_indices = feature_importances.argsort()[::-1]
+    sorted_feature_importances = feature_importances[sorted_indices]
+    sorted_features = func_peaks_df.columns[sorted_indices]
+    sorted_features_df = pd.DataFrame({'Importance': sorted_feature_importances, 'Peak': sorted_features})
+    # write peaks and ranks to output
+    npeaks = len(feature_importances)
+    filename = outdir + "/" + gene + "_" + str(npeaks) + "peaks_rfranker_importance.csv"
+    sorted_features_df.to_csv(filename, index=False)
+    # return sorted features df
+    return sorted_features_df
 
-def xgb_ranker(
-    X: pd.DataFrame,
-    y: pd.Series,
-    gene: str,
-    method: str = "xgb"
-) -> pd.DataFrame:
-    """
-    Rank features using XGBoost importance scores.
 
-    Args:
-        X: Feature matrix (peak accessibility data)
-        y: Target vector (gene expression data)
-        gene: Name of the target gene
-        method: Method identifier for output files
+# ============================================
+def xgb_ranker(model, gene, func_peaks_df, outdir): # rank features using XGBoost regression
+    # assess features
+    feature_importances = model.feature_importances_
+    sorted_indices = feature_importances.argsort()[::-1]
+    sorted_feature_importances = feature_importances[sorted_indices]
+    sorted_features = func_peaks_df.columns[sorted_indices]
+    sorted_features_df = pd.DataFrame({'Importance': sorted_feature_importances, 'Peak': sorted_features})
+    # write peaks and ranks to output
+    npeaks = len(feature_importances)
+    filename = outdir + "/" + gene + "_" + str(npeaks) + "peaks_xgbranker_importance.csv"
+    sorted_features_df.to_csv(filename, index=False)
+    # return sorted features df
+    return sorted_features_df
 
-    Returns:
-        DataFrame containing feature importance scores
-    """
-    # Train XGBoost model
-    xgb_model = xgb.XGBRegressor(n_estimators=100, random_state=42)
-    xgb_model.fit(X, y)
-    
-    # Get feature importance scores
-    importance = pd.DataFrame({
-        'feature': X.columns,
-        'importance': xgb_model.feature_importances_
-    })
-    importance = importance.sort_values('importance', ascending=False)
-    
-    # Save results
-    output_dir = get_method_output_dir(gene, method)
-    importance.to_csv(output_dir / 'feature_importance.csv', index=False)
-    
-    return importance
 
-def lgbm_ranker(
-    X: pd.DataFrame,
-    y: pd.Series,
-    gene: str,
-    method: str = "lgbm"
-) -> pd.DataFrame:
-    """
-    Rank features using LightGBM importance scores.
+# ============================================
+def lgbm_ranker(model, gene, func_peaks_df, outdir): # rank features using LightLGBM regression
+    # assess features
+    feature_importances = model.feature_importances_
+    sorted_indices = feature_importances.argsort()[::-1]
+    sorted_feature_importances = feature_importances[sorted_indices]
+    sorted_features = func_peaks_df.columns[sorted_indices]
+    sorted_features_df = pd.DataFrame({'Importance': sorted_feature_importances, 'Peak': sorted_features})
+    # write peaks and ranks to output
+    npeaks = len(feature_importances)
+    filename = outdir + "/" + gene + "_" + str(npeaks) + "peaks_lgbm_ranker_importance.csv"
+    sorted_features_df.to_csv(filename, index=False)
+    # return sorted features df
+    return sorted_features_df
 
-    Args:
-        X: Feature matrix (peak accessibility data)
-        y: Target vector (gene expression data)
-        gene: Name of the target gene
-        method: Method identifier for output files
 
-    Returns:
-        DataFrame containing feature importance scores
-    """
-    # Train LightGBM model
-    lgb_model = lgb.LGBMRegressor(n_estimators=100, random_state=42)
-    lgb_model.fit(X, y)
-    
-    # Get feature importance scores
-    importance = pd.DataFrame({
-        'feature': X.columns,
-        'importance': lgb_model.feature_importances_
-    })
-    importance = importance.sort_values('importance', ascending=False)
-    
-    # Save results
-    output_dir = get_method_output_dir(gene, method)
-    importance.to_csv(output_dir / 'feature_importance.csv', index=False)
-    
-    return importance
+# ============================================
+def perm_ranker(baseline, gene, func_peaks_df, outdir): # rank features with permutation importance
+    # use permutation importance to rank features and assess features
+    sorted_indices = baseline["importances_mean"].argsort()[::-1]
+    sorted_feature_importances = baseline["importances_mean"][sorted_indices]
+    sorted_features = func_peaks_df.columns[sorted_indices]
+    sorted_features_df = pd.DataFrame({'Importance': sorted_feature_importances, 'Peak': sorted_features})
+    # write peaks and ranks to output
+    npeaks = len(sorted_features_df)
+    filename = outdir + "/" + gene + "_" + str(npeaks) + "peaks_permranker_importance.csv"
+    sorted_features_df.to_csv(filename, index=False)
+    # return sorted features df
+    return sorted_features_df
 
-def perm_ranker(
-    X: pd.DataFrame,
-    y: pd.Series,
-    gene: str,
-    method: str = "perm"
-) -> pd.DataFrame:
-    """
-    Rank features using permutation importance.
 
-    Args:
-        X: Feature matrix (peak accessibility data)
-        y: Target vector (gene expression data)
-        gene: Name of the target gene
-        method: Method identifier for output files
+# ============================================
+def RF_dropcolumn_importance(best_params, func_peaks_df, func_gex_df, gene, outdir):
+    # Train the baseline model
+    baseline_model = RandomForestRegressor(**best_params)
+    baseline_model.fit(func_peaks_df, func_gex_df.values.ravel())
+    baseline_pred = baseline_model.predict(func_peaks_df)
+    baseline_score = mean_squared_error(func_gex_df, baseline_pred)
+    # store feature importances
+    feature_importance = {}
+    # iterate over feature
+    if len(func_peaks_df.columns) > 1:
+        for feature in func_peaks_df.columns:
+            peaks_modified = func_peaks_df.drop(columns=[feature])
+            # Train the modified model
+            modified_model = RandomForestRegressor(**best_params)
+            modified_model.fit(peaks_modified, func_gex_df.values.ravel())
+            modified_pred = modified_model.predict(peaks_modified)
+            modified_score = mean_squared_error(func_gex_df.values.ravel(), modified_pred)
+            # check performance drop
+            drop = modified_score - baseline_score
+            # Store the drop in performance as feature importance
+            feature_importance[feature] = drop
+    elif len(func_peaks_df.columns) == 1:
+        feature = func_peaks_df.columns[0]
+        feature_importance[feature] = 0
+    # sort features based on performance drop
+    sorted_importance = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+    sorted_importance_df = pd.DataFrame(sorted_importance, columns=['Peak', 'Importance'])
+    # write peaks and ranks to output
+    npeaks = len(sorted_importance_df)
+    filename = outdir + "/" + gene + "_" + str(npeaks) + "peaks_dropcolumn_importance.csv"
+    sorted_importance_df.to_csv(filename, index=False)
+    return sorted_importance_df
 
-    Returns:
-        DataFrame containing feature importance scores
-    """
-    # Train base model (Random Forest)
-    rf = RandomForestRegressor(n_estimators=100, random_state=42)
-    rf.fit(X, y)
-    
-    # Calculate permutation importance
-    result = permutation_importance(
-        rf, X, y,
-        n_repeats=10,
-        random_state=42
-    )
-    
-    # Get feature importance scores
-    importance = pd.DataFrame({
-        'feature': X.columns,
-        'importance': result.importances_mean
-    })
-    importance = importance.sort_values('importance', ascending=False)
-    
-    # Save results
-    output_dir = get_method_output_dir(gene, method)
-    importance.to_csv(output_dir / 'feature_importance.csv', index=False)
-    
-    return importance
 
-def select_features(
-    importance_df: pd.DataFrame,
-    threshold: float = FEATURE_IMPORTANCE_THRESHOLD
-) -> List[str]:
-    """
-    Select features based on cumulative importance threshold.
+# ============================================
+def LR_dropcolumn_importance(func_peaks_df, func_gex_df, gene, outdir):
+    # Train the baseline model
+    baseline_model = LinearRegression()
+    baseline_model.fit(func_peaks_df, func_gex_df.values.ravel())
+    baseline_pred = baseline_model.predict(func_peaks_df)
+    baseline_score = mean_squared_error(func_gex_df, baseline_pred)
+    # store feature importances
+    feature_importance = {}
+    # iterate over feature
+    if len(func_peaks_df.columns) > 1:
+        for feature in func_peaks_df.columns:
+            peaks_modified = func_peaks_df.drop(columns=[feature])
+            # Train the modified model
+            modified_model = LinearRegression()
+            modified_model.fit(peaks_modified, func_gex_df.values.ravel())
+            modified_pred = modified_model.predict(peaks_modified)
+            modified_score = mean_squared_error(func_gex_df.values.ravel(), modified_pred)
+            # check performance drop
+            drop = modified_score - baseline_score
+            # Store the drop in performance as feature importance
+            feature_importance[feature] = drop
+    elif len(func_peaks_df.columns) == 1:
+        feature = func_peaks_df.columns[0]
+        feature_importance[feature] = 0
+    # sort features based on performance drop
+    sorted_importance = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+    sorted_importance_df = pd.DataFrame(sorted_importance, columns=['Peak', 'Importance'])
+    # write peaks and ranks to output
+    npeaks = len(sorted_importance_df)
+    filename = outdir + "/" + gene + "_" + str(npeaks) + "peaks_dropcolumn_importance.csv"
+    sorted_importance_df.to_csv(filename, index=False)
+    return sorted_importance_df
 
-    Args:
-        importance_df: DataFrame containing feature importance scores
-        threshold: Cumulative importance threshold (default from config)
 
-    Returns:
-        List of selected feature names
-    """
-    # Calculate cumulative importance
-    importance_df['cumulative_importance'] = importance_df['importance'].cumsum()
-    
-    # Select features above threshold
-    selected_features = importance_df[
-        importance_df['cumulative_importance'] <= threshold
-    ]['feature'].tolist()
-    
-    return selected_features
+# ============================================
+def XGB_dropcolumn_importance(best_params, func_peaks_df, func_gex_df, gene, outdir):
+    # Train the baseline model
+    baseline_model = xgb.XGBRegressor(**best_params)
+    baseline_model.fit(func_peaks_df, func_gex_df.values.ravel())
+    baseline_pred = baseline_model.predict(func_peaks_df)
+    baseline_score = mean_squared_error(func_gex_df, baseline_pred)
+    # store feature importances
+    feature_importance = {}
+    # iterate over feature
+    if len(func_peaks_df.columns) > 1:
+        for feature in func_peaks_df.columns:
+            peaks_modified = func_peaks_df.drop(columns=[feature])
+            # Train the modified model
+            modified_model = xgb.XGBRegressor(**best_params)
+            modified_model.fit(peaks_modified, func_gex_df.values.ravel())
+            modified_pred = modified_model.predict(peaks_modified)
+            modified_score = mean_squared_error(func_gex_df.values.ravel(), modified_pred)
+            # check performance drop
+            drop = modified_score - baseline_score
+            # Store the drop in performance as feature importance
+            feature_importance[feature] = drop
+    elif len(func_peaks_df.columns) == 1:
+        feature = func_peaks_df.columns[0]
+        feature_importance[feature] = 0
+    # sort features based on performance drop
+    sorted_importance = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+    sorted_importance_df = pd.DataFrame(sorted_importance, columns=['Peak', 'Importance'])
+    # write peaks and ranks to output
+    npeaks = len(sorted_importance_df)
+    filename = outdir + "/" + gene + "_" + str(npeaks) + "peaks_dropcolumn_importance.csv"
+    sorted_importance_df.to_csv(filename, index=False)
+    return sorted_importance_df
 
-def main():
-    """
-    Main function to run feature selection methods.
-    """
-    parser = argparse.ArgumentParser(description='Feature selection for snATAC-Express')
-    parser.add_argument('--gene', required=True, help='Target gene name')
-    parser.add_argument('--method', required=True, choices=['rf', 'xgb', 'lgbm', 'perm'],
-                      help='Feature selection method')
-    parser.add_argument('--peaks', required=True, help='Path to peak accessibility matrix')
-    parser.add_argument('--gex', required=True, help='Path to gene expression matrix')
-    args = parser.parse_args()
-    
-    # Load data
-    X = pd.read_csv(args.peaks, index_col=0)
-    y = pd.read_csv(args.gex, index_col=0).iloc[:, 0]
-    
-    # Run selected feature selection method
-    if args.method == 'rf':
-        importance_df = rf_ranker(X, y, args.gene)
-    elif args.method == 'xgb':
-        importance_df = xgb_ranker(X, y, args.gene)
-    elif args.method == 'lgbm':
-        importance_df = lgbm_ranker(X, y, args.gene)
-    elif args.method == 'perm':
-        importance_df = perm_ranker(X, y, args.gene)
-    
-    # Select features
-    selected_features = select_features(importance_df)
-    
-    # Save selected features
-    output_dir = get_method_output_dir(args.gene, args.method)
-    with open(output_dir / 'selected_features.txt', 'w') as f:
-        f.write('\n'.join(selected_features))
 
-if __name__ == '__main__':
-    main()
+# ============================================
+def LGBM_dropcolumn_importance(best_params, func_peaks_df, func_gex_df, gene, outdir):
+    # Train the baseline model
+    baseline_model = lgbm.LGBMRegressor(**best_params)
+    baseline_model.fit(func_peaks_df, func_gex_df.values.ravel())
+    baseline_pred = baseline_model.predict(func_peaks_df)
+    baseline_score = mean_squared_error(func_gex_df, baseline_pred)
+    # store feature importances
+    feature_importance = {}
+    # iterate over feature
+    if len(func_peaks_df.columns) > 1:
+        for feature in func_peaks_df.columns:
+            peaks_modified = func_peaks_df.drop(columns=[feature])
+            # Train the modified model
+            modified_model = lgbm.LGBMRegressor(**best_params)
+            modified_model.fit(peaks_modified, func_gex_df.values.ravel())
+            modified_pred = modified_model.predict(peaks_modified)
+            modified_score = mean_squared_error(func_gex_df.values.ravel(), modified_pred)
+            # check performance drop
+            drop = modified_score - baseline_score
+            # Store the drop in performance as feature importance
+            feature_importance[feature] = drop
+    elif len(func_peaks_df.columns) == 1:
+        feature = func_peaks_df.columns[0]
+        feature_importance[feature] = 0
+    # sort features based on performance drop
+    sorted_importance = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)
+    sorted_importance_df = pd.DataFrame(sorted_importance, columns=['Peak', 'Importance'])
+    # write peaks and ranks to output
+    npeaks = len(sorted_importance_df)
+    filename = outdir + "/" + gene + "_" + str(npeaks) + "peaks_dropcolumn_importance.csv"
+    sorted_importance_df.to_csv(filename, index=False)
+    return sorted_importance_df
+
+
+# ============================================
+def feature_selector(gene, gene_outdir):
+    # get all ranker result files
+    columnnames = ["gene", "celltype", "method", "peak_filter", "npeaks_kept", "cv_R2"]
+    summary = pd.DataFrame(columns = columnnames)
+    feat_dict = {}
+    for filename in os.listdir(gene_outdir):
+        if "_ranker_results.txt" in filename:
+            print(filename)
+            file = os.path.join(gene_outdir, filename)
+            # read in each ranker_results.txt file:
+            ranker_file = pd.read_csv(file, sep = ",")
+            # select peaks with max CV R2
+            max_r2_row = ranker_file[ranker_file["R2"] == ranker_file["R2"].max()]
+            max_nPeaks = max_r2_row["nPeaks"].values[0]
+            max_r2 = ranker_file["R2"].max()
+            # get info for using all peaks
+            all_nPeaks = ranker_file["nPeaks"][0]
+            all_r2 = ranker_file["R2"][0]
+            # get method
+            method = "_".join(filename.split("_")[1:4])
+            # add info to summary: selected peaks
+            new_row_selected = [gene, "all", method, "Y", max_nPeaks, max_r2]
+            summary.loc[len(summary)] = new_row_selected
+            # add info to summary: all peaks
+            new_row_all = [gene, "all", method, "N", all_nPeaks, all_r2]
+            summary.loc[len(summary)] = new_row_all
+    return summary
 
 
 

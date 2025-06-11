@@ -1,0 +1,61 @@
+# snATAC-Express Configuration
+
+# General settings
+output_dir: "results"
+date: "20240213"  # Format: YYYYMMDD
+
+# Phase 1 settings
+phase1:
+  cross_validation:
+    type: "stratified"  # Options: "stratified", "regular"
+    n_splits: 5
+  feature_selection:
+    variance_threshold: 0.95  # Select features explaining 95% of variance
+  peak_filtering:
+    min_samples_present: 0.1  # 10% of samples
+  output_structure:
+    - "all_peaks"
+    - "selected_peaks"
+
+# Phase 2 settings
+phase2:
+  cross_validation:
+    type: "regular"  # Options: "stratified", "regular"
+    n_splits: 5
+  use_aggregated_results: true
+  peak_selection:
+    use_top_peaks: true
+    top_percentage: 0.95  # Use top 95% of peaks
+  output_structure:
+    - "aggregated_results"
+
+# Model settings (common to both phases)
+models:
+  - name: "linear_regression"
+    params:
+      fit_intercept: true
+      normalize: true
+  - name: "random_forest"
+    params:
+      n_estimators: 100
+      max_depth: 10
+      min_samples_split: 2
+  - name: "xgboost"
+    params:
+      n_estimators: 100
+      max_depth: 6
+      learning_rate: 0.1
+  - name: "lightgbm"
+    params:
+      n_estimators: 100
+      max_depth: 6
+      learning_rate: 0.1
+
+# Input/Output paths
+paths:
+  input_data: "example_data/input_data"
+  gene_list: "example_data/genelist_genebody.txt"
+  group_coverages: "example_data/input_data/group_coverages.csv"
+  phase1_output: "results/phase1"
+  phase2_output: "results/phase2"
+  aggregated_results: "results/aggregated" 

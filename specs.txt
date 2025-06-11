@@ -1,0 +1,41 @@
+snATAC-Express is a workflow which does the following:
+
+1. Pseudobulks snATACseq and snRNAseq data. 
+2. Model GEX ~ ATAC data multiple ways:
+    - linear regression, random forest regression, XGBoost, and LightGBM
+    - using ATAC peaks in 10% of samples, 50% of samples, and then all peaks (peaks must be within defined cis regulatory window of the gene)
+    - Parameters are optimized via grid search; these are used in step 4
+3. The feature ranks and R2 values are aggregated, including and excluding linear regression for ensembling
+4. The features which explain ~95% of variance of gene expression are selected, then the models are rerun and their R2 values are evaluated.
+
+Here are the scripts. I have them written to do the following in two phases:
+
+scripts_phase1
+1. data_preprocessing.py:
+    pseudobulk snRNAseq and snATACseq data (example in example_data dir): get info for each gene (gene expression and ATAC peaks)
+2. model_builders.py:
+    This script contains functions which builds models and ranks features. 
+    The general workflow is to use nested k-fold cross validation for hyperparameter tuning and model evaluation. 
+    Models included: multivariate regression, random forest regression, XGBoost, LightGBM
+3. feature_selection.py:
+    This script contains feature ranking functions to be imported to the main predict_gex.py script.
+4. run_multites.py:
+    This script runs many predictive models and executes the workflow.
+
+
+scripts_phase2
+1. data_preprocessing.py:
+    pseudobulk snRNAseq and snATACseq data (example in example_data dir): get info for each gene (gene expression and ATAC peaks)
+2. model_builders.py:
+    This script contains functions which builds models and ranks features. 
+    The general workflow is to use nested k-fold cross validation for hyperparameter tuning and model evaluation. 
+    Models included: multivariate regression, random forest regression, XGBoost, LightGBM
+3. feature_selection.py:
+    This script contains feature ranking functions to be imported to the main predict_gex.py script.
+
+
+I need help with the following:
+1. Describe the input required for data_preprocessing.py: 
+    group_coverages.csv is from ArchR after creating pseudobulk replicates and running the peak calling step
+    GEX and ATAC data stored as sparse matrices which are used to pseudobulk (use needs to create these, please describe the files and the format)
+2. 

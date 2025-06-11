@@ -1,0 +1,2 @@
+gene	genebody_window_100000
+BACH2	chr6:89826528-90396843

@@ -1,0 +1,19 @@
+name: snatac-express
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - xgboost
+  - lightgbm
+  - matplotlib
+  - seaborn
+  - statsmodels
+  - h5py
+  - pip
+  - pip:
+      - typing-extensions 

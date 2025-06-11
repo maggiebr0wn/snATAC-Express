@@ -34,10 +34,23 @@ snATAC-Express is a machine learning-based pipeline that leverages single-nucleu
 - Unix-like operating system (Linux/MacOS)
 - Basic command-line tools (wget, gunzip)
 
-### Dependencies
+### Recommended: Conda Environment Setup
+
+We recommend using [conda](https://docs.conda.io/en/latest/) to manage your Python environment and dependencies for snATAC-Express.
+
+#### 1. Create a new environment to support dependences
 
 ```bash
-pip install -r requirements.txt
+conda env create -f environment.yml
+conda activate snatac-express
+```
+
+#### 2. Verify installation
+
+To check that all packages are installed, run:
+
+```bash
+python -c "import numpy, pandas, scipy, sklearn, xgboost, lightgbm, matplotlib, seaborn, statsmodels, h5py"
 ```
 
 ### Setup
@@ -209,3 +222,89 @@ If you use snATAC-Express in your research, please cite our work (citation infor
 ## Contact
 
 For questions and support, please open an issue in the GitHub repository.
+
+## Input Requirements
+
+### Required Input Files
+
+1. **Gene Expression (GEX) Data**:
+   - `sparse_gex_matrix.txt`: Sparse matrix in Matrix Market format containing gene expression values
+   - `sparse_gex_matrix_rownames.txt`: Gene names (one per line)
+   - `sparse_gex_matrix_colnames.txt`: Cell barcodes (one per line)
+   - Format: Sparse matrix with genes as rows and cells as columns
+   - Data type: uint8 (0s and 1s)
+
+2. **ATAC-seq Peak Data**:
+   - `sparse_peak_matrix.txt`: Sparse matrix in Matrix Market format containing peak accessibility values
+   - `sparse_peak_matrix_rownames.txt`: Peak coordinates in format "chr:start-end" (one per line)
+   - `sparse_peak_matrix_colnames.txt`: Cell barcodes (one per line)
+   - Format: Sparse matrix with peaks as rows and cells as columns
+   - Data type: uint8 (0s and 1s)
+
+3. **Gene List**:
+   - `genelist_genebody.txt`: Tab-separated file with two columns:
+     - Column 1: Gene name
+     - Column 2: Genomic window for cis-regulatory elements (format: "chr:start-end")
+   - Example:
+     ```
+     gene    genebody_window_100000
+     BACH2   chr6:89826528-90396843
+     ```
+
+4. **Group Coverages**:
+   - `group_coverages.csv`: Output from ArchR after creating pseudobulk replicates and running peak calling
+   - Format: CSV file with the following columns:
+     - `peakId`: Unique identifier for each peak (format: "chr:start-end")
+     - `group`: Group/replicate identifier
+     - `coverage`: Peak coverage value for the group
+   - Example:
+     ```
+     peakId,group,coverage
+     chr1:1000-2000,group1,45
+     chr1:2000-3000,group1,67
+     chr1:1000-2000,group2,52
+     chr1:2000-3000,group2,71
+     ```
+   - Requirements:
+     - Peak IDs must match the format in `sparse_peak_matrix_rownames.txt`
+     - Coverage values should be non-negative integers
+     - Each peak should have coverage values for all groups
+     - Groups should represent pseudobulk replicates
+
+### Input Data Preparation
+
+1. **Creating Sparse Matrices**:
+   - Convert your single-cell gene expression and ATAC-seq data to sparse matrices
+   - Ensure cell barcodes match between GEX and ATAC data
+   - Save matrices in Matrix Market format with .txt extension
+   - Save row and column names as plain text files
+
+2. **Gene List Preparation**:
+   - Create a list of genes of interest
+   - For each gene, specify a genomic window to search for cis-regulatory elements
+   - Windows should be large enough to capture potential regulatory elements
+   - Format as tab-separated text file
+
+3. **ArchR Output**:
+   - Run ArchR to create pseudobulk replicates
+   - Perform peak calling
+   - Export group coverages as CSV
+   - Ensure peak IDs match your peak matrix format
+   - Verify coverage values are complete for all peaks and groups
+
+### Example Data
+
+The `example_data` directory contains sample input files:
+- `input_data/`: Directory containing:
+  - Example sparse matrices and their row/column names
+  - `group_coverages.csv`: Example group coverages file showing peak coverage values for each pseudobulk replicate
+- `genelist_genebody.txt`: Example gene list with genomic windows
+
+### Notes
+
+- All input files should be in plain text format with .txt extension
+- Sparse matrices should be in Matrix Market format
+- Cell barcodes must match between GEX and ATAC data
+- Genomic coordinates should be in the same format as your reference genome
+- Ensure sufficient memory for handling large sparse matrices
+- Group coverages CSV should be complete (no missing values) and properly formatted
