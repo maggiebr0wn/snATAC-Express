@@ -8,10 +8,10 @@ random_seed: 12345
 
 # Input data paths
 input_data:
-  sparse_gex_matrix: "example_data/input_data/sparse_gex_matrix.mtx"
-  sparse_peak_matrix: "example_data/input_data/sparse_peak_matrix.mtx"
-  group_coverages: "example_data/input_data/group_coverages.csv"
-  gene_list: "example_data/genelist_genebody.txt"
+  sparse_gex_matrix: "sparse_gex_matrix.txt.mtx"
+  sparse_peak_matrix: "sparse_peak_matrix.txt.mtx"
+  group_coverages: "group_coverages.csv"
+  gene_list: "genelist_genebody.txt"
   
 # Phase 1 settings (Initial modeling and feature ranking)
 phase1:
@@ -28,6 +28,12 @@ phase1:
       min_sample_presence: 0.1
     - name: "peaks_50pct" 
       min_sample_presence: 0.5
+  
+  # WHICH PEAK FILTER TO USE (set this to 0, 1, or 2)
+  # 0 = all_peaks (use all peaks regardless of presence)
+  # 1 = peaks_10pct (use peaks present in ≥10% of pseudobulk samples) 
+  # 2 = peaks_50pct (use peaks present in ≥50% of pseudobulk samples)
+  selected_peak_filter: 1
       
   # Cross-validation settings
   cross_validation:

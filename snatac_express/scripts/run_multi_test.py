@@ -132,7 +132,13 @@ def run_phase1_for_gene(gene, window, config, peak_df, gex_df, pb_keep):
     )
     
     # Filter peaks based on presence
-    min_presence = config['phase1']['peak_filters'][1]['min_sample_presence']  # Use 10% filter
+    selected_filter_idx = config['phase1']['selected_peak_filter']
+    selected_filter = config['phase1']['peak_filters'][selected_filter_idx]
+    min_presence = selected_filter['min_sample_presence']
+    filter_name = selected_filter['name']
+    
+    logger.info(f"  Using peak filter: {filter_name} (min_sample_presence: {min_presence})")
+    
     n_samples_required = int(len(pb_peak_df.columns) * min_presence)
     peak_set = pb_peak_df.loc[
         pb_peak_df[pb_peak_df.columns].ne(0).sum(axis=1) >= n_samples_required
@@ -355,7 +361,8 @@ def main():
     
     try:
         # Load gene list
-        gene_df = pd.read_csv(config['input_data']['gene_list'], sep='\t')
+        gene_list_path = os.path.join('example_data', 'input_data', config['input_data']['gene_list'])
+        gene_df = pd.read_csv(gene_list_path, sep='\t')
         gene_df.columns = ['gene', 'window']
         
         if args.gene:
@@ -374,19 +381,20 @@ def main():
             logger.info("Loading ATAC peaks...")
             peak_df = load_peak_input(
                 config['input_data']['sparse_peak_matrix'],
-                input_dir=os.path.dirname(config['input_data']['sparse_peak_matrix'])
+                input_dir='example_data/input_data'
             )
             
             logger.info("Loading gene expression...")
             gex_df = load_gex_input(
                 config['input_data']['sparse_gex_matrix'],
-                input_dir=os.path.dirname(config['input_data']['sparse_gex_matrix'])
+                input_dir='example_data/input_data'
             )
             
             # Get pseudobulk groups
             pb_keep = get_pseudobulk(
                 config['phase1']['pseudobulk']['replicate'],
-                group_coverages_csv=config['input_data']['group_coverages']
+                group_coverages_csv='group_coverages.csv',
+                input_dir='example_data/input_data'
             )
             
             logger.info(f"Processing {len(gene_df)} genes...")

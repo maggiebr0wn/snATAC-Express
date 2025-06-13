@@ -161,10 +161,10 @@ def make_all_pseudobulk(gene_peaks, gene_exp, gene, pb_keep, outdir, peak_df, ge
     gex_cpm = gex_peak_df/gex_peak_df.values.sum() * 1000000
     gex_pseudobulk = gex_cpm.applymap(lambda x: math.log2(x + 1))
     # save pseudobulk peak matrices
-    peaks_filename = outdir + "/" + gene + "/" + "peaks.csv"
+    peaks_filename = outdir + "/" + "peaks.csv"
     peaks_pseudobulk.to_csv(peaks_filename, index=True)
     # save pseudobulk gex matrices
-    gex_filename = outdir + "/" + gene + "/" + "gex.csv"
+    gex_filename = outdir + "/" + "gex.csv"
     gex_pseudobulk.to_csv(gex_filename, index=True)
     return pb_peak_df, gex_peak_df
 
