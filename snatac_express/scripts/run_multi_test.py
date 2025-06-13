@@ -15,7 +15,7 @@ from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
 
-# Import workflow modules
+# Import workflow modules - use relative imports since we're in a package
 from .data_preprocessing import (
     get_pseudobulk, load_peak_input, subset_peaks,
     load_gex_input, subset_gex, make_all_pseudobulk
