@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-Main workflow runner for snATAC-Express
-Executes both Phase 1 and Phase 2 of the analysis pipeline
+Updated workflow runner for snATAC-Express
+Modified to match original implementation structure where each model
+builds both all-peaks and 95%-peaks versions
 """
 
 import os
@@ -15,13 +16,12 @@ from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
 
-# Import workflow modules - use relative imports since we're in a package
+# Import workflow modules
 from .data_preprocessing import (
     get_pseudobulk, load_peak_input, subset_peaks,
     load_gex_input, subset_gex, make_all_pseudobulk
 )
 from .model_builder import ModelBuilder
-from .feature_selection import feature_selector
 
 
 def setup_logging(output_dir):
@@ -53,82 +53,20 @@ def create_output_dirs(config):
     """Create necessary output directories"""
     dirs = [
         config['output_dir'],
-        os.path.join(config['output_dir'], 'phase1'),
-        os.path.join(config['output_dir'], 'phase2'),
-        os.path.join(config['output_dir'], 'aggregated')
+        os.path.join(config['output_dir'], 'results'),
+        os.path.join(config['output_dir'], 'logs')
     ]
     for dir_path in dirs:
         os.makedirs(dir_path, exist_ok=True)
 
 
-def aggregate_peak_ranks(gene_dir, config):
-    """Aggregate peak importance ranks across all models and methods - preserving raw values"""
+def run_analysis_for_gene(gene, window, config, peak_df, gex_df, pb_keep):
+    """Run analysis for a single gene"""
     logger = logging.getLogger(__name__)
+    logger.info(f"Processing gene {gene}")
     
-    # Find all importance files
-    importance_files = []
-    for method_dir in os.listdir(gene_dir):
-        method_path = os.path.join(gene_dir, method_dir)
-        if os.path.isdir(method_path):
-            for file in os.listdir(method_path):
-                if 'importance.csv' in file:
-                    importance_files.append(os.path.join(method_path, file))
-    
-    if not importance_files:
-        logger.warning(f"No importance files found in {gene_dir}")
-        return None
-    
-    # Read and aggregate importance scores
-    all_importance = {}
-    for file in importance_files:
-        df = pd.read_csv(file)
-        if 'Peak' in df.columns and 'Importance' in df.columns:
-            # For drop column methods, preserve raw MSE differences
-            if 'dropcolumn' in file:
-                # These are raw MSE differences - don't normalize
-                for idx, row in df.iterrows():
-                    peak = row['Peak']
-                    if peak not in all_importance:
-                        all_importance[peak] = []
-                    all_importance[peak].append(row['Importance'])
-            else:
-                # For other methods, convert to z-scores for aggregation
-                if len(df) > 1:
-                    z_scores = (df['Importance'] - df['Importance'].mean()) / df['Importance'].std()
-                else:
-                    z_scores = pd.Series([0])
-                
-                for idx, peak in enumerate(df['Peak']):
-                    if peak not in all_importance:
-                        all_importance[peak] = []
-                    all_importance[peak].append(z_scores.iloc[idx])
-    
-    # Calculate average scores
-    avg_importance = {
-        peak: np.mean(scores) for peak, scores in all_importance.items()
-    }
-    
-    # Create aggregated dataframe
-    agg_df = pd.DataFrame([
-        {'Peak': peak, 'Average_Zscore': score}
-        for peak, score in avg_importance.items()
-    ])
-    
-    # Save aggregated results
-    agg_df = agg_df.sort_values('Average_Zscore', ascending=False)
-    agg_path = os.path.join(gene_dir, 'aggregated_peak_importances.csv')
-    agg_df.to_csv(agg_path, index=False)
-    
-    return agg_df
-
-
-def run_phase1_for_gene(gene, window, config, peak_df, gex_df, pb_keep):
-    """Run Phase 1 analysis for a single gene"""
-    logger = logging.getLogger(__name__)
-    logger.info(f"Phase 1: Processing gene {gene}")
-    
-    # Create output directory
-    gene_outdir = os.path.join(config['output_dir'], 'phase1', gene)
+    # Create output directory for gene
+    gene_outdir = os.path.join(config['output_dir'], 'results', gene)
     os.makedirs(gene_outdir, exist_ok=True)
     
     # Extract gene data
@@ -137,24 +75,21 @@ def run_phase1_for_gene(gene, window, config, peak_df, gex_df, pb_keep):
     
     # Create pseudobulk
     pb_peak_df, gex_peak_df = make_all_pseudobulk(
-        gene_peaks, gene_exp, gene, pb_keep, gene_outdir, peak_df, gex_df
+        gene_peaks, gene_exp, gene, pb_keep, config['output_dir'], peak_df, gex_df
     )
     
-    # Filter peaks based on presence
-    selected_filter_idx = config['phase1']['selected_peak_filter']
-    selected_filter = config['phase1']['peak_filters'][selected_filter_idx]
-    min_presence = selected_filter['min_sample_presence']
-    filter_name = selected_filter['name']
-    
-    logger.info(f"  Using peak filter: {filter_name} (min_sample_presence: {min_presence})")
-    
+    # Filter peaks based on presence (10% threshold as in original)
+    min_presence = 0.1  # 10% threshold
     n_samples_required = int(len(pb_peak_df.columns) * min_presence)
     peak_set = pb_peak_df.loc[
         pb_peak_df[pb_peak_df.columns].ne(0).sum(axis=1) >= n_samples_required
     ]
     
+    logger.info(f"  Total peaks: {len(pb_peak_df)}")
+    logger.info(f"  Filtered peaks (≥10% samples): {len(peak_set)}")
+    
     # Check if we have enough peaks
-    min_peaks = config['advanced']['min_peaks_per_gene']
+    min_peaks = config.get('advanced', {}).get('min_peaks_per_gene', 3)
     if len(peak_set) < min_peaks:
         logger.warning(f"Gene {gene} has only {len(peak_set)} peaks, skipping")
         return None
@@ -172,7 +107,7 @@ def run_phase1_for_gene(gene, window, config, peak_df, gex_df, pb_keep):
     y = pd.DataFrame(gex_array, columns=gex_peak_df.index, index=peak_set.columns.tolist())
     
     # Initialize model builder
-    model_builder = ModelBuilder(config, phase='phase1')
+    model_builder = ModelBuilder(config)
     
     # Run all models and methods
     results = {}
@@ -193,165 +128,95 @@ def run_phase1_for_gene(gene, window, config, peak_df, gex_df, pb_keep):
         
         for method in methods:
             try:
+                # This will build BOTH all-peaks and 95%-peaks models
                 result = model_builder.build_and_evaluate_model(
                     model_name, X, y, gene, gene_outdir, method
                 )
                 results[f"{model_name}_{method}"] = result
-                logger.info(f"    {method}: R² = {result['avg_r2']:.4f}")
+                
+                logger.info(f"    {method}:")
+                logger.info(f"      All peaks: R² = {result['all_peaks']['r2']:.4f} ({result['all_peaks']['n_peaks']} peaks)")
+                logger.info(f"      95% peaks: R² = {result['95_peaks']['r2']:.4f} ({result['95_peaks']['n_peaks']} peaks)")
+                
             except Exception as e:
                 logger.error(f"    Error with {method}: {str(e)}")
-    
-    # Aggregate peak importance across all models
-    agg_importance = aggregate_peak_ranks(gene_outdir, config)
     
     return {
         'gene': gene,
         'n_peaks_total': len(peak_set),
-        'results': results,
-        'aggregated_importance': agg_importance
-    }
-
-
-def run_phase2_for_gene(gene, config, phase1_results):
-    """Run Phase 2 analysis for a single gene using Phase 1 results"""
-    logger = logging.getLogger(__name__)
-    logger.info(f"Phase 2: Processing gene {gene}")
-    
-    # Check if we have Phase 1 results
-    phase1_dir = os.path.join(config['output_dir'], 'phase1', gene)
-    if not os.path.exists(phase1_dir):
-        logger.warning(f"No Phase 1 results found for gene {gene}")
-        return None
-    
-    # Load aggregated importance
-    agg_path = os.path.join(phase1_dir, 'aggregated_peak_importances.csv')
-    if not os.path.exists(agg_path):
-        logger.warning(f"No aggregated importance found for gene {gene}")
-        return None
-    
-    # Load data
-    peaks_df = pd.read_csv(os.path.join(phase1_dir, 'peaks.csv'), index_col=0)
-    gex_df = pd.read_csv(os.path.join(phase1_dir, 'gex.csv'), index_col=0)
-    agg_importance = pd.read_csv(agg_path)
-    
-    # Select top features
-    threshold = config['phase2']['top_features_percentage']
-    min_zscore = agg_importance['Average_Zscore'].min()
-    agg_importance['Adjusted_Zscore'] = agg_importance['Average_Zscore'] + abs(min_zscore)
-    
-    total_sum = agg_importance['Adjusted_Zscore'].sum()
-    cumsum_threshold = threshold * total_sum
-    top_peaks = agg_importance[
-        agg_importance['Adjusted_Zscore'].cumsum() <= cumsum_threshold
-    ]['Peak'].tolist()
-    
-    # Subset to selected peaks
-    selected_peaks = peaks_df.loc[peaks_df.index.isin(top_peaks)]
-    
-    if len(selected_peaks) == 0:
-        logger.warning(f"No peaks selected for gene {gene}")
-        return None
-    
-    # Create output directory
-    gene_outdir = os.path.join(config['output_dir'], 'phase2', gene)
-    os.makedirs(gene_outdir, exist_ok=True)
-    
-    # Prepare data
-    peaks_array = selected_peaks.values.T
-    gex_array = gex_df.values.T
-    
-    X = pd.DataFrame(peaks_array, columns=selected_peaks.index, index=selected_peaks.columns.tolist())
-    y = pd.DataFrame(gex_array, columns=gex_df.index, index=selected_peaks.columns.tolist())
-    
-    # Initialize model builder for Phase 2
-    model_builder = ModelBuilder(config, phase='phase2')
-    
-    # Run models
-    results = {}
-    models_to_run = [name for name, cfg in config['models'].items() if cfg.get('enabled', True)]
-    
-    for model_name in models_to_run:
-        logger.info(f"  Running {model_name}")
-        
-        # Use same methods as Phase 1
-        if model_name == 'linear_regression':
-            methods = ['perm_ranker', 'dropcol_ranker']
-        elif model_name == 'random_forest':
-            methods = ['rf_ranker', 'perm_ranker', 'dropcol_ranker']
-        elif model_name == 'xgboost':
-            methods = ['xgb_ranker', 'perm_ranker', 'dropcol_ranker']
-        elif model_name == 'lightgbm':
-            methods = ['lgbm_ranker', 'perm_ranker', 'dropcol_ranker']
-        
-        for method in methods:
-            try:
-                result = model_builder.build_and_evaluate_model(
-                    model_name, X, y, gene, gene_outdir, method
-                )
-                results[f"{model_name}_{method}"] = result
-                logger.info(f"    {method}: R² = {result['avg_r2']:.4f}")
-            except Exception as e:
-                logger.error(f"    Error with {method}: {str(e)}")
-    
-    return {
-        'gene': gene,
-        'n_peaks_selected': len(selected_peaks),
-        'n_peaks_original': len(peaks_df),
         'results': results
     }
 
 
-def summarize_results(config, phase):
-    """Summarize results across all genes for a phase"""
+def summarize_results(config):
+    """Summarize results across all genes"""
     logger = logging.getLogger(__name__)
-    logger.info(f"Summarizing {phase} results")
+    logger.info("Summarizing results")
     
-    phase_dir = os.path.join(config['output_dir'], phase)
+    results_dir = os.path.join(config['output_dir'], 'results')
     summary_data = []
     
-    for gene_dir in os.listdir(phase_dir):
-        gene_path = os.path.join(phase_dir, gene_dir)
+    # Process each gene directory
+    for gene_dir in os.listdir(results_dir):
+        gene_path = os.path.join(results_dir, gene_dir)
         if os.path.isdir(gene_path):
             # Find all result files
             for file in os.listdir(gene_path):
                 if file.endswith('_results.txt'):
                     result_df = pd.read_csv(os.path.join(gene_path, file))
+                    
+                    # Extract method name
                     parts = file.replace('_results.txt', '').split('_')
                     gene = parts[0]
                     method = '_'.join(parts[1:])
                     
-                    summary_data.append({
-                        'Gene': gene,
-                        'Method': method,
-                        'nPeaks': result_df['nPeaks'].iloc[0],
-                        'R2': result_df['R2'].iloc[0],
-                        'Phase': phase
-                    })
+                    # Original format has 2 rows: all peaks and 95% peaks
+                    if len(result_df) >= 2:
+                        # All peaks (row 1)
+                        summary_data.append({
+                            'Gene': gene,
+                            'Method': method,
+                            'nPeaks': result_df.iloc[0]['nPeaks'],
+                            'PeakCat': 'All_Peaks',
+                            'CV_R2': result_df.iloc[0]['R2']
+                        })
+                        
+                        # 95% peaks (row 2)
+                        summary_data.append({
+                            'Gene': gene,
+                            'Method': method,
+                            'nPeaks': result_df.iloc[1]['nPeaks'],
+                            'PeakCat': 'Select_Peaks',
+                            'CV_R2': result_df.iloc[1]['R2']
+                        })
     
     if summary_data:
         summary_df = pd.DataFrame(summary_data)
-        summary_path = os.path.join(
-            config['output_dir'], 
-            'aggregated', 
-            f'{phase}_summary.csv'
-        )
-        summary_df.to_csv(summary_path, index=False)
+        summary_path = os.path.join(config['output_dir'], 'cv_summary.txt')
+        summary_df.to_csv(summary_path, sep='\t', index=False)
         logger.info(f"Saved summary to {summary_path}")
         
         # Print summary statistics
-        logger.info(f"\n{phase.upper()} Summary Statistics:")
+        logger.info("\nSummary Statistics:")
         logger.info(f"Total genes analyzed: {summary_df['Gene'].nunique()}")
-        logger.info(f"Average R²: {summary_df['R2'].mean():.4f}")
-        logger.info(f"Median R²: {summary_df['R2'].median():.4f}")
-        logger.info(f"Best R²: {summary_df['R2'].max():.4f}")
-    
+        
+        # Stats for all peaks
+        all_peaks_df = summary_df[summary_df['PeakCat'] == 'All_Peaks']
+        logger.info(f"\nAll Peaks:")
+        logger.info(f"  Average R²: {all_peaks_df['CV_R2'].mean():.4f}")
+        logger.info(f"  Median R²: {all_peaks_df['CV_R2'].median():.4f}")
+        
+        # Stats for 95% peaks
+        select_peaks_df = summary_df[summary_df['PeakCat'] == 'Select_Peaks']
+        logger.info(f"\n95% Selected Peaks:")
+        logger.info(f"  Average R²: {select_peaks_df['CV_R2'].mean():.4f}")
+        logger.info(f"  Median R²: {select_peaks_df['CV_R2'].median():.4f}")
+
 
 def main():
     parser = argparse.ArgumentParser(description='Run snATAC-Express workflow')
     parser.add_argument('--config', type=str, default='config.yaml',
                         help='Path to configuration file')
-    parser.add_argument('--phase', type=str, choices=['1', '2', 'both'],
-                        default='both', help='Which phase(s) to run')
     parser.add_argument('--gene', type=str, default=None,
                         help='Run analysis for a single gene only')
     args = parser.parse_args()
@@ -364,9 +229,8 @@ def main():
     
     # Setup logging
     logger = setup_logging(config['output_dir'])
-    logger.info("Starting snATAC-Express workflow")
+    logger.info("Starting snATAC-Express workflow (original structure)")
     logger.info(f"Configuration: {args.config}")
-    logger.info(f"Phase(s): {args.phase}")
     
     try:
         # Load gene list
@@ -380,84 +244,44 @@ def main():
             if len(gene_df) == 0:
                 raise ValueError(f"Gene {args.gene} not found in gene list")
         
-        # Phase 1
-        if args.phase in ['1', 'both']:
-            logger.info("\n" + "="*50)
-            logger.info("PHASE 1: Initial modeling and feature ranking")
-            logger.info("="*50)
-            
-            # Load data
-            logger.info("Loading ATAC peaks...")
-            peak_df = load_peak_input(
-                config['input_data']['sparse_peak_matrix'],
-                input_dir='example_data/input_data'
-            )
-            
-            logger.info("Loading gene expression...")
-            gex_df = load_gex_input(
-                config['input_data']['sparse_gex_matrix'],
-                input_dir='example_data/input_data'
-            )
-            
-            # Get pseudobulk groups
-            pb_keep = get_pseudobulk(
-                config['phase1']['pseudobulk']['replicate'],
-                group_coverages_csv='group_coverages.csv',
-                input_dir='example_data/input_data'
-            )
-            
-            logger.info(f"Processing {len(gene_df)} genes...")
-            
-            # Process each gene
-            phase1_results = {}
-            for idx, row in gene_df.iterrows():
-                gene = row['gene']
-                window = row['window']
-                
-                result = run_phase1_for_gene(
-                    gene, window, config, peak_df, gex_df, pb_keep
-                )
-                
-                if result:
-                    phase1_results[gene] = result
-            
-            # Summarize Phase 1
-            summarize_results(config, 'phase1')
-            logger.info(f"Phase 1 completed. Processed {len(phase1_results)} genes.")
+        logger.info("Loading ATAC peaks...")
+        peak_df = load_peak_input(
+            config['input_data']['sparse_peak_matrix'],
+            input_dir='example_data/input_data'
+        )
         
-        # Phase 2
-        if args.phase in ['2', 'both']:
-            logger.info("\n" + "="*50)
-            logger.info("PHASE 2: Refined modeling on selected features")
-            logger.info("="*50)
-            
-            # Load Phase 1 results if not already loaded
-            if args.phase == '2':
-                phase1_results = {}
-                phase1_dir = os.path.join(config['output_dir'], 'phase1')
-                if os.path.exists(phase1_dir):
-                    for gene_dir in os.listdir(phase1_dir):
-                        if os.path.isdir(os.path.join(phase1_dir, gene_dir)):
-                            phase1_results[gene_dir] = {'gene': gene_dir}
-            
-            logger.info(f"Processing {len(phase1_results)} genes with Phase 1 results...")
-            
-            # Process each gene
-            phase2_results = {}
-            for gene in phase1_results:
-                if args.gene and gene != args.gene:
-                    continue
-                    
-                result = run_phase2_for_gene(gene, config, phase1_results.get(gene))
-                
-                if result:
-                    phase2_results[gene] = result
-            
-            # Summarize Phase 2
-            summarize_results(config, 'phase2')
-            logger.info(f"Phase 2 completed. Processed {len(phase2_results)} genes.")
+        logger.info("Loading gene expression...")
+        gex_df = load_gex_input(
+            config['input_data']['sparse_gex_matrix'],
+            input_dir='example_data/input_data'
+        )
         
-        logger.info("\nWorkflow completed successfully!")
+        # Get pseudobulk groups
+        pb_keep = get_pseudobulk(
+            config['phase1']['pseudobulk']['replicate'],
+            group_coverages_csv='group_coverages.csv',
+            input_dir='example_data/input_data'
+        )
+        
+        logger.info(f"Processing {len(gene_df)} genes...")
+        
+        # Process each gene
+        all_results = []
+        for idx, row in gene_df.iterrows():
+            gene = row['gene']
+            window = row['window']
+            
+            result = run_analysis_for_gene(
+                gene, window, config, peak_df, gex_df, pb_keep
+            )
+            
+            if result:
+                all_results.append(result)
+        
+        # Summarize results
+        summarize_results(config)
+        
+        logger.info(f"\nWorkflow completed. Processed {len(all_results)} genes.")
         
     except Exception as e:
         logger.error(f"Error running workflow: {str(e)}")
