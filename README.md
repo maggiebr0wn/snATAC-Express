@@ -63,9 +63,11 @@ Organize your input files in the following structure:
 input_data/
 ├── sparse_gex_matrix.mtx      # Gene expression matrix (sparse format)
 ├── sparse_peak_matrix.mtx     # Peak accessibility matrix (sparse format)
-├── group_coverages.csv        # Cell group coverage information
+├── group_coverages.csv        # Cell group coverage information (obtained from ArchR)
 └── genelist.txt              # List of genes to analyze
 ```
+
+Examples are provided in the example_data folder.
 
 ### 2. Configure Your Analysis
 
@@ -180,24 +182,3 @@ python snatac_express/scripts/init_parallel_sbatch.py -g genelist.txt -o Results
 ## 📄 License
 
 MIT License. See [LICENSE](LICENSE) file for details.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📚 Citation
-
-If you use snATAC-Express in your research, please cite:
-
-```
-Brown, M. (2024). snATAC-Express: Predicting gene expression from single-nucleus ATAC-seq data using machine learning. 
-GitHub repository: https://github.com/maggiebr0wn/ATAC-Express
-```
-
-## 📞 Support
-
-For questions and support:
-- Open an issue on GitHub
-- Check the example data and configuration files
-- Review the log files for detailed error messages
-
