@@ -62,7 +62,7 @@ def create_output_dirs(config):
 
 
 def aggregate_peak_ranks(gene_dir, config):
-    """Aggregate peak importance ranks across all models and methods"""
+    """Aggregate peak importance ranks across all models and methods - preserving raw values"""
     logger = logging.getLogger(__name__)
     
     # Find all importance files
@@ -83,18 +83,27 @@ def aggregate_peak_ranks(gene_dir, config):
     for file in importance_files:
         df = pd.read_csv(file)
         if 'Peak' in df.columns and 'Importance' in df.columns:
-            # Convert to z-scores for aggregation
-            if len(df) > 1:
-                z_scores = (df['Importance'] - df['Importance'].mean()) / df['Importance'].std()
+            # For drop column methods, preserve raw MSE differences
+            if 'dropcolumn' in file:
+                # These are raw MSE differences - don't normalize
+                for idx, row in df.iterrows():
+                    peak = row['Peak']
+                    if peak not in all_importance:
+                        all_importance[peak] = []
+                    all_importance[peak].append(row['Importance'])
             else:
-                z_scores = pd.Series([0])
-            
-            for idx, peak in enumerate(df['Peak']):
-                if peak not in all_importance:
-                    all_importance[peak] = []
-                all_importance[peak].append(z_scores.iloc[idx])
+                # For other methods, convert to z-scores for aggregation
+                if len(df) > 1:
+                    z_scores = (df['Importance'] - df['Importance'].mean()) / df['Importance'].std()
+                else:
+                    z_scores = pd.Series([0])
+                
+                for idx, peak in enumerate(df['Peak']):
+                    if peak not in all_importance:
+                        all_importance[peak] = []
+                    all_importance[peak].append(z_scores.iloc[idx])
     
-    # Calculate average z-scores
+    # Calculate average scores
     avg_importance = {
         peak: np.mean(scores) for peak, scores in all_importance.items()
     }

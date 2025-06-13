@@ -1,6 +1,5 @@
 #!/usr/sbin/anaconda
 
-
 import lightgbm as lgbm
 import os
 import pandas as pd
@@ -245,8 +244,6 @@ def feature_selector(gene, gene_outdir):
             new_row_all = [gene, "all", method, "N", all_nPeaks, all_r2]
             summary.loc[len(summary)] = new_row_all
     return summary
-
-
 
 
 
