@@ -91,6 +91,54 @@ class ModelBuilder:
         gs_model.fit(X, y.values.ravel())
         return gs_model.best_params_
     
+    def grid_search_lightgbm(self, param_grid, X, y):
+        """Special grid search for LightGBM to avoid hanging issues"""
+        inner_cv = KFold(n_splits=5, shuffle=True, random_state=0)
+        
+        # Create base estimator with threading fixes
+        base_estimator = lgbm.LGBMRegressor(
+            random_state=42,
+            verbosity=-1,  # Suppress all output
+            verbose=-1,
+            n_jobs=1,  # Force single job
+            num_threads=1,  # Force single thread
+            force_col_wise=True,  # Avoid the 80+ second overhead
+            force_row_wise=False,  # Explicitly disable row-wise
+            deterministic=True,
+            min_data_in_leaf=1,  # Allow smaller leaves for small datasets
+            min_sum_hessian_in_leaf=0.001,  # Lower threshold for small datasets
+            min_gain_to_split=0.0  # Allow any split that improves
+        )
+        
+        # Calculate grid size
+        grid_size = 1
+        for param_values in param_grid.values():
+            if param_values is not None:
+                grid_size *= len(param_values)
+        
+        if grid_size > 100:  # Use RandomizedSearch for large grids
+            gs_model = RandomizedSearchCV(
+                estimator=base_estimator,
+                param_distributions=param_grid,
+                cv=inner_cv,
+                n_jobs=1,  # Force single job for outer CV
+                n_iter=min(50, grid_size),  # Limit iterations
+                random_state=42,
+                scoring='r2'
+            )
+        else:
+            gs_model = GridSearchCV(
+                estimator=base_estimator,
+                param_grid=param_grid,
+                cv=inner_cv,
+                n_jobs=1,  # Force single job for outer CV
+                scoring='r2'
+            )
+        
+        # Fit with explicit conversion to avoid issues
+        gs_model.fit(X, y.values.ravel())
+        return gs_model.best_params_
+    
     def cross_validate_model(self, model, X, y, gene, gene_outdir, test_method, model_name):
         """Perform k-fold cross-validation with feature ranking"""
         cv_config = self.phase_config['cross_validation']
@@ -139,7 +187,7 @@ class ModelBuilder:
         
         if model_name == "linear_regression":
             if test_method == "perm_ranker":
-                baseline = permutation_importance(model, X, y)
+                baseline = permutation_importance(model, X, y, n_jobs=1)  # Force single job
                 return perm_ranker(baseline, gene, X, test_outdir)
             elif test_method == "dropcol_ranker":
                 return LR_dropcolumn_importance(X, y, gene, test_outdir)
@@ -148,7 +196,7 @@ class ModelBuilder:
             if test_method == "rf_ranker":
                 return rf_ranker(model, gene, X, test_outdir)
             elif test_method == "perm_ranker":
-                baseline = permutation_importance(model, X, y)
+                baseline = permutation_importance(model, X, y, n_jobs=1)  # Force single job
                 return perm_ranker(baseline, gene, X, test_outdir)
             elif test_method == "dropcol_ranker":
                 best_params = model.get_params()
@@ -158,7 +206,7 @@ class ModelBuilder:
             if test_method == "xgb_ranker":
                 return xgb_ranker(model, gene, X, test_outdir)
             elif test_method == "perm_ranker":
-                baseline = permutation_importance(model, X, y)
+                baseline = permutation_importance(model, X, y, n_jobs=1)  # Force single job
                 return perm_ranker(baseline, gene, X, test_outdir)
             elif test_method == "dropcol_ranker":
                 best_params = model.get_params()
@@ -168,7 +216,7 @@ class ModelBuilder:
             if test_method == "lgbm_ranker":
                 return lgbm_ranker(model, gene, X, test_outdir)
             elif test_method == "perm_ranker":
-                baseline = permutation_importance(model, X, y)
+                baseline = permutation_importance(model, X, y, n_jobs=1)  # Force single job
                 return perm_ranker(baseline, gene, X, test_outdir)
             elif test_method == "dropcol_ranker":
                 best_params = model.get_params()
@@ -255,53 +303,34 @@ class ModelBuilder:
         if model_name != 'linear_regression':
             param_grid = self.get_param_grid(model_name, len(X.columns))
             
-            # Add default parameters for LightGBM to prevent hanging
+            # Use special grid search for LightGBM
             if model_name == 'lightgbm':
-                # Create a custom estimator with default parameters
-                base_estimator = lgbm.LGBMRegressor(
-                    random_state=42,
-                    verbose=-1,  # Suppress verbose output
-                    n_jobs=1,    # Use single thread to avoid conflicts
-                    force_col_wise=True  # Force column-wise for better compatibility
-                )
-                
-                if len(param_grid) > 100:  # Use RandomizedSearch for large grids
-                    gs_model = RandomizedSearchCV(
-                        estimator=base_estimator,
-                        param_distributions=param_grid,
-                        cv=KFold(n_splits=5, shuffle=True, random_state=0),
-                        n_jobs=1,  # Use single job to avoid conflicts
-                        n_iter=50,
-                        random_state=42
-                    )
-                else:
-                    gs_model = GridSearchCV(
-                        estimator=base_estimator,
-                        param_grid=param_grid,
-                        cv=KFold(n_splits=5, shuffle=True, random_state=0),
-                        n_jobs=1  # Use single job to avoid conflicts
-                    )
+                best_params = self.grid_search_lightgbm(param_grid, X, y)
             else:
-                # Use original grid search for other models
                 best_params = self.grid_search(model_class, param_grid, X, y)
+            
+            # Create model with best parameters
+            if model_name == 'lightgbm':
+                # Add threading fixes to best params
+                model = lgbm.LGBMRegressor(
+                    **best_params,
+                    random_state=42,
+                    verbosity=-1,  # Suppress all output
+                    verbose=-1,
+                    n_jobs=1,
+                    num_threads=1,
+                    force_col_wise=True,  # Avoid the 80+ second overhead
+                    force_row_wise=False,  # Explicitly disable row-wise
+                    deterministic=True,
+                    min_data_in_leaf=1,  # Allow smaller leaves for small datasets
+                    min_sum_hessian_in_leaf=0.001,  # Lower threshold for small datasets
+                    min_gain_to_split=0.0  # Allow any split that improves
+                )
+            else:
                 model = model_class(**best_params)
-                best_params = best_params
         else:
             model = model_class()
             best_params = {}
-        
-        # For LightGBM, get best params from grid search
-        if model_name == 'lightgbm' and model_name != 'linear_regression':
-            gs_model.fit(X, y.values.ravel())
-            best_params = gs_model.best_params_
-            # Create model with best params plus defaults
-            model = lgbm.LGBMRegressor(
-                **best_params,
-                random_state=42,
-                verbose=-1,
-                n_jobs=1,
-                force_col_wise=True
-            )
         
         # Cross-validation
         r2_scores, importance_dict = self.cross_validate_model(
