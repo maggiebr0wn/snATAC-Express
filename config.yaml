@@ -20,7 +20,7 @@ phase1:
     replicate: "1"  # Which replicate to use (1 or 2)
     min_cells: 10   # Minimum cells per pseudobulk group
     
-  # Peak filtering options
+  # Peak filtering options: Peaks in at least X% of cells to include.
   peak_filters:
     - name: "all_peaks"
       min_sample_presence: 0.0

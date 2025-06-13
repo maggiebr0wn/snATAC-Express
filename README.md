@@ -6,7 +6,7 @@
 
 <img src="https://github.com/maggiebr0wn/ATAC-Express/blob/main/atac-express.jpg" align="right" width="400">
 
-**snATAC-Express** predicts gene expression from single-nucleus ATAC-seq data using machine learning, and highlights key cis-regulatory regions driving expression.
+**snATAC-Express** predicts gene expression from single-nucleus ATAC-seq data using machine learning, and highlights key cis-regulatory regions driving expression. *Manuscript under review*
 
 ## 🔍 Features
 

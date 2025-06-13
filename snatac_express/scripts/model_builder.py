@@ -254,11 +254,54 @@ class ModelBuilder:
         # Get best parameters (skip for linear regression)
         if model_name != 'linear_regression':
             param_grid = self.get_param_grid(model_name, len(X.columns))
-            best_params = self.grid_search(model_class, param_grid, X, y)
-            model = model_class(**best_params)
+            
+            # Add default parameters for LightGBM to prevent hanging
+            if model_name == 'lightgbm':
+                # Create a custom estimator with default parameters
+                base_estimator = lgbm.LGBMRegressor(
+                    random_state=42,
+                    verbose=-1,  # Suppress verbose output
+                    n_jobs=1,    # Use single thread to avoid conflicts
+                    force_col_wise=True  # Force column-wise for better compatibility
+                )
+                
+                if len(param_grid) > 100:  # Use RandomizedSearch for large grids
+                    gs_model = RandomizedSearchCV(
+                        estimator=base_estimator,
+                        param_distributions=param_grid,
+                        cv=KFold(n_splits=5, shuffle=True, random_state=0),
+                        n_jobs=1,  # Use single job to avoid conflicts
+                        n_iter=50,
+                        random_state=42
+                    )
+                else:
+                    gs_model = GridSearchCV(
+                        estimator=base_estimator,
+                        param_grid=param_grid,
+                        cv=KFold(n_splits=5, shuffle=True, random_state=0),
+                        n_jobs=1  # Use single job to avoid conflicts
+                    )
+            else:
+                # Use original grid search for other models
+                best_params = self.grid_search(model_class, param_grid, X, y)
+                model = model_class(**best_params)
+                best_params = best_params
         else:
             model = model_class()
             best_params = {}
+        
+        # For LightGBM, get best params from grid search
+        if model_name == 'lightgbm' and model_name != 'linear_regression':
+            gs_model.fit(X, y.values.ravel())
+            best_params = gs_model.best_params_
+            # Create model with best params plus defaults
+            model = lgbm.LGBMRegressor(
+                **best_params,
+                random_state=42,
+                verbose=-1,
+                n_jobs=1,
+                force_col_wise=True
+            )
         
         # Cross-validation
         r2_scores, importance_dict = self.cross_validate_model(
