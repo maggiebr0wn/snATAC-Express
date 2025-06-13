@@ -1,0 +1,109 @@
+# snATAC-Express Configuration
+
+# General settings
+project_name: "snATAC_Express_Analysis"
+output_dir: "results"
+n_jobs: -1  # Number of parallel jobs (-1 = use all cores)
+random_seed: 12345
+
+# Input data paths
+input_data:
+  sparse_gex_matrix: "example_data/input_data/sparse_gex_matrix.mtx"
+  sparse_peak_matrix: "example_data/input_data/sparse_peak_matrix.mtx"
+  group_coverages: "example_data/input_data/group_coverages.csv"
+  gene_list: "example_data/genelist_genebody.txt"
+  
+# Phase 1 settings (Initial modeling and feature ranking)
+phase1:
+  # Pseudobulk settings
+  pseudobulk:
+    replicate: "1"  # Which replicate to use (1 or 2)
+    min_cells: 10   # Minimum cells per pseudobulk group
+    
+  # Peak filtering options
+  peak_filters:
+    - name: "all_peaks"
+      min_sample_presence: 0.0
+    - name: "peaks_10pct"
+      min_sample_presence: 0.1
+    - name: "peaks_50pct" 
+      min_sample_presence: 0.5
+      
+  # Cross-validation settings
+  cross_validation:
+    type: "stratified"  # Options: "stratified", "regular"
+    n_columns: 3        # Number of CV column repeats
+    n_folds: 5          # Folds per column
+    
+  # Feature selection
+  feature_selection:
+    variance_threshold: 0.95  # Select features explaining 95% of variance
+    ranking_methods:
+      - "model_importance"    # Built-in feature importance
+      - "permutation"        # Permutation importance
+      - "drop_column"        # Drop-column importance
+      
+  # Model aggregation
+  aggregation:
+    include_linear_regression: false  # Whether to include LR in ensemble
+    
+# Phase 2 settings (Refined modeling on selected features)
+phase2:
+  # Use aggregated results from Phase 1
+  use_aggregated_peaks: true
+  top_features_percentage: 0.95  # Use top 95% of features
+  
+  # Cross-validation settings (typically simpler than Phase 1)
+  cross_validation:
+    type: "regular"     # Options: "stratified", "regular"
+    n_columns: 3        # Number of CV column repeats
+    n_folds: 5          # Folds per column
+    
+# Model settings (common to both phases)
+models:
+  linear_regression:
+    enabled: true
+    params:
+      fit_intercept: true
+      
+  random_forest:
+    enabled: true
+    param_grid:
+      n_estimators: [5, 15, 30, 50, 100]
+      max_depth: [2, 5, 10, 20, null]
+      min_samples_split: [2, 4, 8, 20]
+      min_samples_leaf: [1, 5, 20, 40]
+      
+  xgboost:
+    enabled: true
+    param_grid:
+      n_estimators: [5, 15, 30, 50, 100]
+      max_depth: [2, 3, 5, 10, 20, null]
+      min_child_weight: [1, 2, 4, 8, 20]
+      learning_rate: [0.01, 0.1, 0.2, 0.3]
+      subsample: [0.5, 1]
+      
+  lightgbm:
+    enabled: true
+    param_grid:
+      n_estimators: [30, 50, 100, 200]
+      max_depth: [2, 3, 5, 10]
+      min_child_weight: [1, 2, 4, 8]
+      learning_rate: [0.01, 0.05, 0.1]
+      subsample: [0.5, 1]
+      num_leaves: [4, 9, 25, 50]
+      
+# Advanced settings
+advanced:
+  # Minimum peaks required for modeling
+  min_peaks_per_gene: 3
+  
+  # Gene window settings (if not using pre-computed windows)
+  gene_window:
+    upstream: 100000    # Base pairs upstream of TSS
+    downstream: 100000  # Base pairs downstream of TES
+    
+  # Normalization
+  normalization:
+    method: "log2_cpm"  # log2(CPM + 1)
+    scale_factor: 1000000

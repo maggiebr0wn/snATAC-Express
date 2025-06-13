@@ -1,0 +1,19 @@
+include README.md
+include LICENSE
+include requirements.txt
+include config.yaml
+include environment.yaml
+include specs.txt
+include *.jpg
+include *.png
+include *.pdf
+
+recursive-include snatac_express/example_data *
+recursive-include snatac_express/scripts *.sh
+recursive-include snatac_express/scripts *.yaml
+recursive-include snatac_express/scripts *.yml
+
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .DS_Store
+global-exclude .git* 

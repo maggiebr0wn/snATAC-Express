@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "snatac-express"
+dynamic = ["version"]
+description = "Predict gene expression from single-nucleus ATAC-seq data using machine learning"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Maggie Brown"}
+]
+maintainers = [
+    {name = "Maggie Brown"}
+]
+keywords = ["bioinformatics", "machine-learning", "atac-seq", "gene-expression", "single-cell"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.20.0",
+    "pandas>=1.3.0",
+    "scipy>=1.7.0",
+    "scikit-learn>=1.0.0",
+    "xgboost>=1.5.0",
+    "lightgbm>=3.3.0",
+    "pyyaml>=6.0",
+    "jupyter>=1.0.0",
+    "matplotlib>=3.4.0",
+    "seaborn>=0.11.0",
+    "statsmodels>=0.13.0",
+    "h5py>=3.6.0",
+    "typing-extensions>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov>=2.0",
+    "black>=21.0",
+    "flake8>=3.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/maggiebr0wn/ATAC-Express"
+Repository = "https://github.com/maggiebr0wn/ATAC-Express"
+Documentation = "https://github.com/maggiebr0wn/ATAC-Express#readme"
+"Bug Tracker" = "https://github.com/maggiebr0wn/ATAC-Express/issues"
+
+[project.scripts]
+snatac-express = "snatac_express.run_snATAC_Express:main"
+
+[tool.setuptools]
+packages = ["snatac_express"]
+
+[tool.setuptools.package-data]
+snatac_express = [
+    "config.yaml",
+    "example_data/*",
+    "scripts/*.py",
+    "scripts/*.sh",
+]
+
+[tool.setuptools_scm]
+write_to = "snatac_express/_version.py" 
