@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 Updated workflow runner for snATAC-Express
-Modified to match original implementation structure where each model
-builds both all-peaks and 95%-peaks versions
+Now supports both Phase 1 and Phase 2 with aggregation
 """
 
 import os
@@ -22,6 +21,7 @@ from .data_preprocessing import (
     load_gex_input, subset_gex, make_all_pseudobulk
 )
 from .model_builder import ModelBuilder
+from .run_phase2 import run_phase2_workflow
 
 
 def setup_logging(output_dir):
@@ -49,13 +49,20 @@ def load_config(config_path):
         return yaml.safe_load(f)
 
 
-def create_output_dirs(config):
+def create_output_dirs(config, phase='both'):
     """Create necessary output directories"""
     dirs = [
         config['output_dir'],
         os.path.join(config['output_dir'], 'results'),
         os.path.join(config['output_dir'], 'logs')
     ]
+    
+    if phase in ['2', 'both']:
+        dirs.extend([
+            os.path.join(config['output_dir'], 'phase2_results'),
+            os.path.join(config['output_dir'], 'aggregated_results')
+        ])
+    
     for dir_path in dirs:
         os.makedirs(dir_path, exist_ok=True)
 
@@ -217,6 +224,8 @@ def main():
     parser = argparse.ArgumentParser(description='Run snATAC-Express workflow')
     parser.add_argument('--config', type=str, default='config.yaml',
                         help='Path to configuration file')
+    parser.add_argument('--phase', type=str, choices=['1', '2', 'both'],
+                        default='both', help='Which phase(s) to run')
     parser.add_argument('--gene', type=str, default=None,
                         help='Run analysis for a single gene only')
     args = parser.parse_args()
@@ -225,63 +234,94 @@ def main():
     config = load_config(args.config)
     
     # Create output directories
-    create_output_dirs(config)
+    create_output_dirs(config, args.phase)
     
     # Setup logging
     logger = setup_logging(config['output_dir'])
-    logger.info("Starting snATAC-Express workflow (original structure)")
+    logger.info("Starting snATAC-Express workflow")
     logger.info(f"Configuration: {args.config}")
+    logger.info(f"Phase(s) to run: {args.phase}")
     
     try:
-        # Load gene list
-        gene_list_path = os.path.join('example_data', 'input_data', config['input_data']['gene_list'])
-        gene_df = pd.read_csv(gene_list_path, sep='\t')
-        gene_df.columns = ['gene', 'window']
-        
-        if args.gene:
-            # Filter to single gene if specified
-            gene_df = gene_df[gene_df['gene'] == args.gene]
-            if len(gene_df) == 0:
-                raise ValueError(f"Gene {args.gene} not found in gene list")
-        
-        logger.info("Loading ATAC peaks...")
-        peak_df = load_peak_input(
-            config['input_data']['sparse_peak_matrix'],
-            input_dir='example_data/input_data'
-        )
-        
-        logger.info("Loading gene expression...")
-        gex_df = load_gex_input(
-            config['input_data']['sparse_gex_matrix'],
-            input_dir='example_data/input_data'
-        )
-        
-        # Get pseudobulk groups
-        pb_keep = get_pseudobulk(
-            config['phase1']['pseudobulk']['replicate'],
-            group_coverages_csv='group_coverages.csv',
-            input_dir='example_data/input_data'
-        )
-        
-        logger.info(f"Processing {len(gene_df)} genes...")
-        
-        # Process each gene
-        all_results = []
-        for idx, row in gene_df.iterrows():
-            gene = row['gene']
-            window = row['window']
+        # Run Phase 1 if requested
+        if args.phase in ['1', 'both']:
+            logger.info("\n" + "="*60)
+            logger.info("PHASE 1: Initial modeling with feature selection")
+            logger.info("="*60)
             
-            result = run_analysis_for_gene(
-                gene, window, config, peak_df, gex_df, pb_keep
+            # Load gene list
+            gene_list_path = os.path.join('example_data', 'input_data', config['input_data']['gene_list'])
+            gene_df = pd.read_csv(gene_list_path, sep='\t')
+            gene_df.columns = ['gene', 'window']
+            
+            if args.gene:
+                # Filter to single gene if specified
+                gene_df = gene_df[gene_df['gene'] == args.gene]
+                if len(gene_df) == 0:
+                    raise ValueError(f"Gene {args.gene} not found in gene list")
+            
+            logger.info("Loading ATAC peaks...")
+            peak_df = load_peak_input(
+                config['input_data']['sparse_peak_matrix'],
+                input_dir='example_data/input_data'
             )
             
-            if result:
-                all_results.append(result)
+            logger.info("Loading gene expression...")
+            gex_df = load_gex_input(
+                config['input_data']['sparse_gex_matrix'],
+                input_dir='example_data/input_data'
+            )
+            
+            # Get pseudobulk groups
+            pb_keep = get_pseudobulk(
+                config['phase1']['pseudobulk']['replicate'],
+                group_coverages_csv='group_coverages.csv',
+                input_dir='example_data/input_data'
+            )
+            
+            logger.info(f"Processing {len(gene_df)} genes...")
+            
+            # Process each gene
+            all_results = []
+            for idx, row in gene_df.iterrows():
+                gene = row['gene']
+                window = row['window']
+                
+                result = run_analysis_for_gene(
+                    gene, window, config, peak_df, gex_df, pb_keep
+                )
+                
+                if result:
+                    all_results.append(result)
+            
+            # Summarize results
+            summarize_results(config)
+            
+            logger.info(f"\nPhase 1 completed. Processed {len(all_results)} genes.")
         
-        # Summarize results
-        summarize_results(config)
+        # Run Phase 2 if requested
+        if args.phase in ['2', 'both']:
+            logger.info("\n" + "="*60)
+            logger.info("PHASE 2: Aggregation and refined modeling")
+            logger.info("="*60)
+            
+            # Check if Phase 1 results exist
+            phase1_results_dir = os.path.join(config['output_dir'], 'results')
+            if not os.path.exists(phase1_results_dir) or not os.listdir(phase1_results_dir):
+                if args.phase == '2':
+                    raise ValueError("Phase 1 results not found. Please run Phase 1 first.")
+                else:
+                    logger.warning("No Phase 1 results found, skipping Phase 2")
+                    return
+            
+            # Run Phase 2 workflow
+            phase2_results = run_phase2_workflow(config, phase1_results_dir)
+            
+            logger.info(f"\nPhase 2 completed. Processed {len(phase2_results)} genes.")
         
-        logger.info(f"\nWorkflow completed. Processed {len(all_results)} genes.")
+        logger.info("\n" + "="*60)
+        logger.info("Workflow completed successfully!")
+        logger.info("="*60)
         
     except Exception as e:
         logger.error(f"Error running workflow: {str(e)}")
