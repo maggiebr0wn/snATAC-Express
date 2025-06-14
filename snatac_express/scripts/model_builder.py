@@ -159,9 +159,11 @@ class ModelBuilder:
         npeaks_95 = len(sub_func_peaks_df.columns)
         results_dict[npeaks_95] = average_score_95
         
-        # Save results (2 rows: all peaks and 95% peaks)
+        # Save results in organized directory structure
+        model_results_dir = os.path.join(gene_outdir, "model_results")
+        os.makedirs(model_results_dir, exist_ok=True)
         final_df = pd.DataFrame(results_dict.items(), columns=["nPeaks", "R2"])
-        filename = os.path.join(gene_outdir, f"{gene}_RFR_{test}_results.txt")
+        filename = os.path.join(model_results_dir, f"{gene}_RFR_{test}_results.txt")
         final_df.to_csv(filename, index=False)
         
         return {
@@ -237,13 +239,6 @@ class ModelBuilder:
                 score = model_95.score(X_test, y_test)
                 r2_fold_scores_95.append(score)
                 
-                # Feature ranking for 95% peaks
-                if test == "perm_ranker":
-                    baseline = permutation_importance(model_95, X_train, y_train)
-                    sorted_features_df = perm_ranker(baseline, gene, sub_func_peaks_df, test_outdir)
-                elif test == "dropcol_ranker":
-                    sorted_features_df = LR_dropcolumn_importance(X_train, y_train, gene, test_outdir)
-                
                 # Save predictions
                 pred_act_dir = os.path.join(test_outdir, "cross_validations_top95_peaks")
                 os.makedirs(pred_act_dir, exist_ok=True)
@@ -251,6 +246,13 @@ class ModelBuilder:
                 y_test_copy["Predicted"] = y_pred.tolist()
                 outname = os.path.join(pred_act_dir, f"Column_{column_idx}_Fold_{fold}.csv")
                 y_test_copy.to_csv(outname)
+                
+                # Feature ranking for 95% peaks
+                if test == "perm_ranker":
+                    baseline = permutation_importance(model_95, X_train, y_train)
+                    sorted_features_df = perm_ranker(baseline, gene, sub_func_peaks_df, test_outdir)
+                elif test == "dropcol_ranker":
+                    sorted_features_df = LR_dropcolumn_importance(X_train, y_train, gene, test_outdir)
                 
                 # Aggregate importance
                 sorted_feats_dict = sorted_features_df.groupby("Peak")["Importance"].apply(list).to_dict()
@@ -266,9 +268,11 @@ class ModelBuilder:
         npeaks_95 = len(peak_importance_dict_95)  # Note: original uses len(peak_importance_dict)
         results_dict[npeaks_95] = average_score_95
         
-        # Save results (2 rows: all peaks and 95% peaks)
+        # Save results in organized directory structure
+        model_results_dir = os.path.join(gene_outdir, "model_results")
+        os.makedirs(model_results_dir, exist_ok=True)
         final_df = pd.DataFrame(results_dict.items(), columns=["nPeaks", "R2"])
-        filename = os.path.join(gene_outdir, f"{gene}_LR_{test}_results.txt")
+        filename = os.path.join(model_results_dir, f"{gene}_LR_{test}_results.txt")
         final_df.to_csv(filename, index=False)
         
         return {
@@ -348,6 +352,14 @@ class ModelBuilder:
                 score = model_95.score(X_test, y_test)
                 r2_fold_scores_95.append(score)
                 
+                # Save predictions
+                pred_act_dir = os.path.join(test_outdir, "cross_validations_top95_peaks")
+                os.makedirs(pred_act_dir, exist_ok=True)
+                y_test_copy = y_test.copy()
+                y_test_copy["Predicted"] = y_pred.tolist()
+                outname = os.path.join(pred_act_dir, f"Column_{column_idx}_Fold_{fold}.csv")
+                y_test_copy.to_csv(outname)
+                
                 # Feature ranking for 95% peaks
                 if test == "xgb_ranker":
                     sorted_features_df = xgb_ranker(model_95, gene, sub_func_peaks_df, test_outdir)
@@ -356,14 +368,6 @@ class ModelBuilder:
                     sorted_features_df = perm_ranker(baseline, gene, sub_func_peaks_df, test_outdir)
                 elif test == "dropcol_ranker":
                     sorted_features_df = XGB_dropcolumn_importance(best_params_95, X_train, y_train, gene, test_outdir)
-                
-                # Save predictions
-                pred_act_dir = os.path.join(test_outdir, "cross_validations_top95_peaks")
-                os.makedirs(pred_act_dir, exist_ok=True)
-                y_test_copy = y_test.copy()
-                y_test_copy["Predicted"] = y_pred.tolist()
-                outname = os.path.join(pred_act_dir, f"Column_{column_idx}_Fold_{fold}.csv")
-                y_test_copy.to_csv(outname)
                 
                 # Aggregate importance
                 sorted_feats_dict = sorted_features_df.groupby("Peak")["Importance"].apply(list).to_dict()
@@ -379,9 +383,11 @@ class ModelBuilder:
         npeaks_95 = len(sub_func_peaks_df.columns)
         results_dict[npeaks_95] = average_score_95
         
-        # Save results (2 rows: all peaks and 95% peaks)
+        # Save results in organized directory structure
+        model_results_dir = os.path.join(gene_outdir, "model_results")
+        os.makedirs(model_results_dir, exist_ok=True)
         final_df = pd.DataFrame(results_dict.items(), columns=["nPeaks", "R2"])
-        filename = os.path.join(gene_outdir, f"{gene}_XGB_{test}_results.txt")
+        filename = os.path.join(model_results_dir, f"{gene}_XGB_{test}_results.txt")
         final_df.to_csv(filename, index=False)
         
         return {
@@ -477,6 +483,14 @@ class ModelBuilder:
                     score = model_95.score(X_test, y_test)
                     r2_fold_scores_95.append(score)
                     
+                    # Save predictions
+                    pred_act_dir = os.path.join(test_outdir, "cross_validations_top95_peaks")
+                    os.makedirs(pred_act_dir, exist_ok=True)
+                    y_test_copy = y_test.copy()
+                    y_test_copy["Predicted"] = y_pred.tolist()
+                    outname = os.path.join(pred_act_dir, f"Column_{column_idx}_Fold_{fold}.csv")
+                    y_test_copy.to_csv(outname)
+                    
                     # Feature ranking for 95% peaks
                     if test == "lgbm_ranker":
                         sorted_features_df = lgbm_ranker(model_95, gene, sub_func_peaks_df, test_outdir)
@@ -485,14 +499,6 @@ class ModelBuilder:
                         sorted_features_df = perm_ranker(baseline, gene, sub_func_peaks_df, test_outdir)
                     elif test == "dropcol_ranker":
                         sorted_features_df = LGBM_dropcolumn_importance(best_params_95, X_train, y_train, gene, test_outdir)
-                    
-                    # Save predictions
-                    pred_act_dir = os.path.join(test_outdir, "cross_validations_top95_peaks")
-                    os.makedirs(pred_act_dir, exist_ok=True)
-                    y_test_copy = y_test.copy()
-                    y_test_copy["Predicted"] = y_pred.tolist()
-                    outname = os.path.join(pred_act_dir, f"Column_{column_idx}_Fold_{fold}.csv")
-                    y_test_copy.to_csv(outname)
                     
                     # Aggregate importance
                     sorted_feats_dict = sorted_features_df.groupby("Peak")["Importance"].apply(list).to_dict()
@@ -508,9 +514,11 @@ class ModelBuilder:
         npeaks_95 = len(sub_func_peaks_df.columns)
         results_dict[npeaks_95] = average_score_95
         
-        # Save results (2 rows: all peaks and 95% peaks)
+        # Save results in organized directory structure
+        model_results_dir = os.path.join(gene_outdir, "model_results")
+        os.makedirs(model_results_dir, exist_ok=True)
         final_df = pd.DataFrame(results_dict.items(), columns=["nPeaks", "R2"])
-        filename = os.path.join(gene_outdir, f"{gene}_LGBM_{test}_results.txt")
+        filename = os.path.join(model_results_dir, f"{gene}_LGBM_{test}_results.txt")
         final_df.to_csv(filename, index=False)
         
         return {
@@ -629,15 +637,18 @@ class ModelBuilder:
         r2_fold_scores = []
         peak_importance_dict = {}
         
-        # Determine output directory
+        # Determine output directory - use organized structure
+        feature_rankings_dir = os.path.join(gene_outdir, "feature_rankings")
+        os.makedirs(feature_rankings_dir, exist_ok=True)
+        
         if test == "lgbm_ranker":
-            test_outdir = os.path.join(gene_outdir, "lgbm_ranker")
+            test_outdir = os.path.join(feature_rankings_dir, "lgbm_ranker")
         elif test == "perm_ranker":
-            test_outdir = os.path.join(gene_outdir, "lgbm_permranker")
+            test_outdir = os.path.join(feature_rankings_dir, "lgbm_permranker")
         elif test == "dropcol_ranker":
-            test_outdir = os.path.join(gene_outdir, "lgbm_dropcolranker")
+            test_outdir = os.path.join(feature_rankings_dir, "lgbm_dropcolranker")
         else:
-            test_outdir = os.path.join(gene_outdir, test)
+            test_outdir = os.path.join(feature_rankings_dir, test)
         
         os.makedirs(test_outdir, exist_ok=True)
         
@@ -702,19 +713,22 @@ class ModelBuilder:
         r2_fold_scores = []
         peak_importance_dict = {}
         
-        # Determine output directory
+        # Determine output directory - use organized structure
+        feature_rankings_dir = os.path.join(gene_outdir, "feature_rankings")
+        os.makedirs(feature_rankings_dir, exist_ok=True)
+        
         if test == "rf_ranker":
-            test_outdir = os.path.join(gene_outdir, "rf_ranker")
+            test_outdir = os.path.join(feature_rankings_dir, "rf_ranker")
         elif test == "xgb_ranker":
-            test_outdir = os.path.join(gene_outdir, "xgb_ranker")
+            test_outdir = os.path.join(feature_rankings_dir, "xgb_ranker")
         elif test == "lgbm_ranker":
-            test_outdir = os.path.join(gene_outdir, "lgbm_ranker")
+            test_outdir = os.path.join(feature_rankings_dir, "lgbm_ranker")
         elif test == "perm_ranker":
-            test_outdir = os.path.join(gene_outdir, f"{model_prefix.lower()}_permranker")
+            test_outdir = os.path.join(feature_rankings_dir, f"{model_prefix.lower()}_permranker")
         elif test == "dropcol_ranker":
-            test_outdir = os.path.join(gene_outdir, f"{model_prefix.lower()}_dropcolranker")
+            test_outdir = os.path.join(feature_rankings_dir, f"{model_prefix.lower()}_dropcolranker")
         else:
-            test_outdir = os.path.join(gene_outdir, test)
+            test_outdir = os.path.join(feature_rankings_dir, test)
         
         os.makedirs(test_outdir, exist_ok=True)
         
@@ -771,17 +785,21 @@ class ModelBuilder:
     def _RF_init_peakranker(self, model, best_params, func_peaks_df, func_gex_df, 
                             gene_outdir, test, gene):
         """Random Forest peak ranker"""
+        # Use organized directory structure
+        feature_rankings_dir = os.path.join(gene_outdir, "feature_rankings")
+        os.makedirs(feature_rankings_dir, exist_ok=True)
+        
         if test == "rf_ranker":
-            test_outdir = os.path.join(gene_outdir, "rf_ranker")
+            test_outdir = os.path.join(feature_rankings_dir, "rf_ranker")
             os.makedirs(test_outdir, exist_ok=True)
             sorted_features_df = rf_ranker(model, gene, func_peaks_df, test_outdir)
         elif test == "perm_ranker":
-            test_outdir = os.path.join(gene_outdir, "rf_permranker")
+            test_outdir = os.path.join(feature_rankings_dir, "rf_permranker")
             os.makedirs(test_outdir, exist_ok=True)
             baseline = permutation_importance(model, func_peaks_df, func_gex_df)
             sorted_features_df = perm_ranker(baseline, gene, func_peaks_df, test_outdir)
         elif test == "dropcol_ranker":
-            test_outdir = os.path.join(gene_outdir, "rf_dropcolranker")
+            test_outdir = os.path.join(feature_rankings_dir, "rf_dropcolranker")
             os.makedirs(test_outdir, exist_ok=True)
             sorted_features_df = RF_dropcolumn_importance(best_params, func_peaks_df, 
                                                          func_gex_df, gene, test_outdir)
@@ -793,17 +811,21 @@ class ModelBuilder:
     def _XGB_init_peakranker(self, model, best_params, func_peaks_df, func_gex_df, 
                              gene_outdir, test, gene):
         """XGBoost peak ranker"""
+        # Use organized directory structure
+        feature_rankings_dir = os.path.join(gene_outdir, "feature_rankings")
+        os.makedirs(feature_rankings_dir, exist_ok=True)
+        
         if test == "xgb_ranker":
-            test_outdir = os.path.join(gene_outdir, "xgb_ranker")
+            test_outdir = os.path.join(feature_rankings_dir, "xgb_ranker")
             os.makedirs(test_outdir, exist_ok=True)
             sorted_features_df = xgb_ranker(model, gene, func_peaks_df, test_outdir)
         elif test == "perm_ranker":
-            test_outdir = os.path.join(gene_outdir, "xgb_permranker")
+            test_outdir = os.path.join(feature_rankings_dir, "xgb_permranker")
             os.makedirs(test_outdir, exist_ok=True)
             baseline = permutation_importance(model, func_peaks_df, func_gex_df)
             sorted_features_df = perm_ranker(baseline, gene, func_peaks_df, test_outdir)
         elif test == "dropcol_ranker":
-            test_outdir = os.path.join(gene_outdir, "xgb_dropcolranker")
+            test_outdir = os.path.join(feature_rankings_dir, "xgb_dropcolranker")
             os.makedirs(test_outdir, exist_ok=True)
             sorted_features_df = XGB_dropcolumn_importance(best_params, func_peaks_df, 
                                                           func_gex_df, gene, test_outdir)
@@ -815,17 +837,21 @@ class ModelBuilder:
     def _LGBM_init_peakranker(self, model, best_params, func_peaks_df, func_gex_df, 
                               gene_outdir, test, gene):
         """LightGBM peak ranker"""
+        # Use organized directory structure
+        feature_rankings_dir = os.path.join(gene_outdir, "feature_rankings")
+        os.makedirs(feature_rankings_dir, exist_ok=True)
+        
         if test == "lgbm_ranker":
-            test_outdir = os.path.join(gene_outdir, "lgbm_ranker")
+            test_outdir = os.path.join(feature_rankings_dir, "lgbm_ranker")
             os.makedirs(test_outdir, exist_ok=True)
             sorted_features_df = lgbm_ranker(model, gene, func_peaks_df, test_outdir)
         elif test == "perm_ranker":
-            test_outdir = os.path.join(gene_outdir, "lgbm_permranker")
+            test_outdir = os.path.join(feature_rankings_dir, "lgbm_permranker")
             os.makedirs(test_outdir, exist_ok=True)
             baseline = permutation_importance(model, func_peaks_df, func_gex_df)
             sorted_features_df = perm_ranker(baseline, gene, func_peaks_df, test_outdir)
         elif test == "dropcol_ranker":
-            test_outdir = os.path.join(gene_outdir, "lgbm_dropcolranker")
+            test_outdir = os.path.join(feature_rankings_dir, "lgbm_dropcolranker")
             os.makedirs(test_outdir, exist_ok=True)
             sorted_features_df = LGBM_dropcolumn_importance(best_params, func_peaks_df, 
                                                            func_gex_df, gene, test_outdir)
@@ -837,13 +863,17 @@ class ModelBuilder:
     def _LR_init_peakranker(self, model, func_peaks_df, func_gex_df, 
                             gene_outdir, test, gene):
         """Linear Regression peak ranker"""
+        # Use organized directory structure
+        feature_rankings_dir = os.path.join(gene_outdir, "feature_rankings")
+        os.makedirs(feature_rankings_dir, exist_ok=True)
+        
         if test == "perm_ranker":
-            test_outdir = os.path.join(gene_outdir, "lr_permranker")
+            test_outdir = os.path.join(feature_rankings_dir, "lr_permranker")
             os.makedirs(test_outdir, exist_ok=True)
             baseline = permutation_importance(model, func_peaks_df, func_gex_df)
             sorted_features_df = perm_ranker(baseline, gene, func_peaks_df, test_outdir)
         elif test == "dropcol_ranker":
-            test_outdir = os.path.join(gene_outdir, "lr_dropcolranker")
+            test_outdir = os.path.join(feature_rankings_dir, "lr_dropcolranker")
             os.makedirs(test_outdir, exist_ok=True)
             sorted_features_df = LR_dropcolumn_importance(func_peaks_df, func_gex_df, 
                                                          gene, test_outdir)

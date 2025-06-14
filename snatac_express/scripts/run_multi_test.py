@@ -53,7 +53,7 @@ def create_output_dirs(config, phase='both'):
     """Create necessary output directories"""
     dirs = [
         config['output_dir'],
-        os.path.join(config['output_dir'], 'results'),
+        os.path.join(config['output_dir'], 'phase1_results'),  # Changed from 'results'
         os.path.join(config['output_dir'], 'logs')
     ]
     
@@ -66,23 +66,28 @@ def create_output_dirs(config, phase='both'):
     for dir_path in dirs:
         os.makedirs(dir_path, exist_ok=True)
 
-
 def run_analysis_for_gene(gene, window, config, peak_df, gex_df, pb_keep):
     """Run analysis for a single gene"""
     logger = logging.getLogger(__name__)
     logger.info(f"Processing gene {gene}")
     
     # Create output directory for gene
-    gene_outdir = os.path.join(config['output_dir'], 'results', gene)
+    gene_outdir = os.path.join(config['output_dir'], 'phase1_results', gene)
     os.makedirs(gene_outdir, exist_ok=True)
+    
+    # Create subdirectories
+    subdirs = ['model_results', 'feature_rankings', 'cross_validation', 'trained_models', 'data']
+    for subdir in subdirs:
+        os.makedirs(os.path.join(gene_outdir, subdir), exist_ok=True)
     
     # Extract gene data
     gene_peaks = subset_peaks(peak_df, window)
     gene_exp = subset_gex(gex_df, gene)
     
-    # Create pseudobulk
+    # Create pseudobulk and save to data subdirectory
+    data_dir = os.path.join(gene_outdir, 'data')
     pb_peak_df, gex_peak_df = make_all_pseudobulk(
-        gene_peaks, gene_exp, gene, pb_keep, config['output_dir'], peak_df, gex_df
+        gene_peaks, gene_exp, gene, pb_keep, data_dir, peak_df, gex_df
     )
     
     # Filter peaks based on presence (10% threshold as in original)
@@ -160,17 +165,27 @@ def summarize_results(config):
     logger = logging.getLogger(__name__)
     logger.info("Summarizing results")
     
-    results_dir = os.path.join(config['output_dir'], 'results')
+    results_dir = os.path.join(config['output_dir'], 'phase1_results')  # Changed from 'results'
     summary_data = []
     
     # Process each gene directory
     for gene_dir in os.listdir(results_dir):
         gene_path = os.path.join(results_dir, gene_dir)
         if os.path.isdir(gene_path):
+            # Look in model_results subdirectory first
+            model_results_dir = os.path.join(gene_path, 'model_results')
+            if os.path.exists(model_results_dir):
+                files_to_check = os.listdir(model_results_dir)
+                base_dir = model_results_dir
+            else:
+                # Fallback to gene directory (for backward compatibility)
+                files_to_check = os.listdir(gene_path)
+                base_dir = gene_path
+            
             # Find all result files
-            for file in os.listdir(gene_path):
+            for file in files_to_check:
                 if file.endswith('_results.txt'):
-                    result_df = pd.read_csv(os.path.join(gene_path, file))
+                    result_df = pd.read_csv(os.path.join(base_dir, file))
                     
                     # Extract method name
                     parts = file.replace('_results.txt', '').split('_')
@@ -306,7 +321,7 @@ def main():
             logger.info("="*60)
             
             # Check if Phase 1 results exist
-            phase1_results_dir = os.path.join(config['output_dir'], 'results')
+            phase1_results_dir = os.path.join(config['output_dir'], 'phase1_results')  # Changed from 'results'
             if not os.path.exists(phase1_results_dir) or not os.listdir(phase1_results_dir):
                 if args.phase == '2':
                     raise ValueError("Phase 1 results not found. Please run Phase 1 first.")

@@ -23,7 +23,70 @@ from .data_preprocessing import (
 )
 from .model_builder import ModelBuilder
 
-
+def create_master_aggregated_peaks(aggregated_results, output_dir, logger):
+    """
+    Create master aggregated peak ranks file after aggregation
+    
+    Args:
+        aggregated_results: Dictionary of gene -> aggregated importance DataFrames
+        output_dir: Directory to save the master file
+        logger: Logger instance
+    """
+    logger.info("Creating master aggregated peak ranks file...")
+    
+    all_peaks_data = []
+    
+    for gene, importance_df in aggregated_results.items():
+        if importance_df.empty:
+            continue
+            
+        # Create gene-specific data
+        gene_df = importance_df[['Peaks', 'Average_Zscore']].copy()
+        gene_df['Gene'] = gene
+        gene_df['Rank'] = range(1, len(gene_df) + 1)
+        gene_df = gene_df[['Gene', 'Peaks', 'Average_Zscore', 'Rank']]
+        gene_df.columns = ['Gene', 'Peak', 'Avg_Zscore', 'Rank']
+        
+        all_peaks_data.append(gene_df)
+    
+    if all_peaks_data:
+        # Combine all data
+        master_df = pd.concat(all_peaks_data, ignore_index=True)
+        
+        # Save master file
+        output_file = os.path.join(output_dir, 'master_aggregated_peak_ranks.csv')
+        master_df.to_csv(output_file, index=False)
+        logger.info(f"  Saved master aggregated peak ranks to {output_file}")
+        
+        # Create summary statistics
+        summary_stats = {
+            'Total_Genes': master_df['Gene'].nunique(),
+            'Total_Unique_Peaks': master_df['Peak'].nunique(),
+            'Avg_Peaks_Per_Gene': len(master_df) / master_df['Gene'].nunique() if master_df['Gene'].nunique() > 0 else 0
+        }
+        
+        # Add gene-specific stats
+        for gene in master_df['Gene'].unique():
+            gene_data = master_df[master_df['Gene'] == gene]
+            summary_stats[f'{gene}_Total_Peaks'] = len(gene_data)
+            summary_stats[f'{gene}_Top_Peak'] = gene_data.iloc[0]['Peak'] if len(gene_data) > 0 else 'N/A'
+            summary_stats[f'{gene}_Top_Zscore'] = gene_data.iloc[0]['Avg_Zscore'] if len(gene_data) > 0 else 'N/A'
+        
+        # Save summary
+        summary_file = os.path.join(output_dir, 'aggregation_summary.txt')
+        with open(summary_file, 'w') as f:
+            f.write("AGGREGATED PEAK RANKS SUMMARY\n")
+            f.write("=" * 50 + "\n\n")
+            for key, value in summary_stats.items():
+                f.write(f"{key}: {value}\n")
+        
+        logger.info(f"  Saved aggregation summary to {summary_file}")
+        
+        return output_file
+    else:
+        logger.warning("No aggregated peak data to create master file")
+        return None
+    
 def aggregate_peak_importances(phase1_results_dir, output_dir, include_lr=False):
     """
     Aggregate peak importance scores across all genes from Phase 1
@@ -67,9 +130,17 @@ def aggregate_peak_importances(phase1_results_dir, output_dir, include_lr=False)
                 "lgbm_dropcolranker", "lgbm_permranker", "lgbm_ranker"
             ]
         
+        # Look in feature_rankings subdirectory for organized structure
+        feature_rankings_dir = os.path.join(gene_path, "feature_rankings")
+        if os.path.exists(feature_rankings_dir):
+            base_dir = feature_rankings_dir
+        else:
+            # Fallback to gene directory (for backward compatibility)
+            base_dir = gene_path
+        
         # Collect importance scores from each method
         for test in test_list:
-            test_dir = os.path.join(gene_path, test)
+            test_dir = os.path.join(base_dir, test)
             if not os.path.exists(test_dir):
                 continue
                 
@@ -128,7 +199,6 @@ def aggregate_peak_importances(phase1_results_dir, output_dir, include_lr=False)
     
     return aggregated_results
 
-
 def get_top_aggregated_peaks(aggregated_results, top_percentage=0.95):
     """
     Get top peaks based on aggregated importance across all genes
@@ -177,17 +247,23 @@ def run_phase2_for_gene(gene, window, selected_peaks, config, peak_df, gex_df, p
     logger = logging.getLogger(__name__)
     logger.info(f"Running Phase 2 for gene {gene}")
     
-    # Create output directory for Phase 2
+    # Create organized output directory for Phase 2
     gene_outdir = os.path.join(config['output_dir'], 'phase2_results', gene)
     os.makedirs(gene_outdir, exist_ok=True)
+    
+    # Create subdirectories
+    subdirs = ['model_results', 'feature_rankings', 'cross_validation', 'trained_models', 'data']
+    for subdir in subdirs:
+        os.makedirs(os.path.join(gene_outdir, subdir), exist_ok=True)
     
     # Extract gene data
     gene_peaks = subset_peaks(peak_df, window)
     gene_exp = subset_gex(gex_df, gene)
     
-    # Create pseudobulk
+    # Create pseudobulk and save to data subdirectory
+    data_dir = os.path.join(gene_outdir, 'data')
     pb_peak_df, gex_peak_df = make_all_pseudobulk(
-        gene_peaks, gene_exp, gene, pb_keep, gene_outdir, peak_df, gex_df
+        gene_peaks, gene_exp, gene, pb_keep, data_dir, peak_df, gex_df
     )
     
     # Filter to only use aggregated selected peaks
@@ -336,9 +412,17 @@ def run_phase2_workflow(config, phase1_results_dir):
         if result:
             phase2_results.append(result)
     
-    # Step 5: Summarize Phase 2 results
-    logger.info("Step 5: Summarizing Phase 2 results")
+    # Step 5: Create master aggregated peaks file from Phase 2 results
+    logger.info("Step 5: Creating Phase 2 master aggregated peak ranks")
+    create_phase2_master_aggregated_peaks(config, selected_peaks, aggregated_results)
+    
+    # Step 6: Summarize Phase 2 results
+    logger.info("Step 6: Summarizing Phase 2 results")
     summarize_phase2_results(config, phase2_results)
+    
+    # Step 7: Generate Phase 2 aggregated summary
+    logger.info("Step 7: Generating Phase 2 aggregated summary")
+    phase2_summary = generate_phase2_aggregated_summary(config)
     
     logger.info(f"Phase 2 completed. Processed {len(phase2_results)} genes.")
     
@@ -415,6 +499,168 @@ def load_config(config_path):
     """Load configuration from YAML file"""
     with open(config_path, 'r') as f:
         return yaml.safe_load(f)
+
+
+def generate_phase2_aggregated_summary(config):
+    """Generate the final aggregated peak summary from Phase 2 results"""
+    logger = logging.getLogger(__name__)
+    logger.info("Generating Phase 2 aggregated peak summary...")
+    
+    phase2_dir = os.path.join(config['output_dir'], 'phase2_results')
+    aggregated_dir = os.path.join(config['output_dir'], 'aggregated_results')
+    
+    if not os.path.exists(phase2_dir):
+        logger.warning("Phase 2 results directory not found")
+        return None
+    
+    # Get all gene directories in Phase 2
+    gene_dirs = [d for d in os.listdir(phase2_dir) 
+                 if os.path.isdir(os.path.join(phase2_dir, d))]
+    
+    summary_data = []
+    
+    for gene in gene_dirs:
+        gene_path = os.path.join(phase2_dir, gene)
+        model_results_dir = os.path.join(gene_path, 'model_results')
+        
+        if not os.path.exists(model_results_dir):
+            continue
+            
+        # Get all result files
+        result_files = glob.glob(os.path.join(model_results_dir, '*_results.txt'))
+        
+        if not result_files:
+            continue
+            
+        # Read the first result file to get peak count
+        result_df = pd.read_csv(result_files[0])
+        
+        if len(result_df) >= 1:
+            n_peaks = int(result_df.iloc[0]['nPeaks'])
+            
+            # Calculate performance across all methods
+            r2_scores = []
+            best_method = None
+            best_r2 = 0.0
+            
+            for result_file in result_files:
+                result_df = pd.read_csv(result_file)
+                if len(result_df) >= 1:
+                    r2_score = result_df.iloc[0]['R2']
+                    r2_scores.append(r2_score)
+                    
+                    # Extract method name
+                    filename = os.path.basename(result_file)
+                    method = filename.replace(f'{gene}_', '').replace('_results.txt', '')
+                    
+                    if r2_score > best_r2:
+                        best_r2 = r2_score
+                        best_method = method
+            
+            avg_r2 = np.mean(r2_scores) if r2_scores else 0.0
+            
+            summary_data.append({
+                'gene': gene,
+                'n_peaks_phase2': n_peaks,
+                'avg_r2_phase2': avg_r2,
+                'best_method': best_method,
+                'best_r2_phase2': best_r2,
+                'n_methods': len(r2_scores)
+            })
+            
+            logger.info(f"  {gene}: {n_peaks} peaks, avg R² = {avg_r2:.4f}, best = {best_method} ({best_r2:.4f})")
+    
+    if summary_data:
+        # Create summary DataFrame
+        summary_df = pd.DataFrame(summary_data)
+        
+        # Save Phase 2 aggregated summary
+        output_file = os.path.join(aggregated_dir, 'phase2_aggregated_summary.csv')
+        summary_df.to_csv(output_file, index=False)
+        logger.info(f"Saved Phase 2 aggregated summary to {output_file}")
+        
+        # Update selected peaks summary to reflect Phase 2
+        selected_peaks_file = os.path.join(aggregated_dir, 'selected_peaks_summary.csv')
+        selected_df = summary_df[['gene', 'n_peaks_phase2']].copy()
+        selected_df.columns = ['gene', 'n_peaks_selected']
+        selected_df.to_csv(selected_peaks_file, index=False)
+        logger.info(f"Updated selected peaks summary to reflect Phase 2 results")
+        
+        return summary_df
+    else:
+        logger.warning("No Phase 2 results found to summarize")
+        return None
+
+
+def create_phase2_master_aggregated_peaks(config, selected_peaks, aggregated_results):
+    """
+    Create master aggregated peak ranks file from Phase 2 results
+    This uses only the peaks that are actually used in Phase 2 models
+    """
+    logger = logging.getLogger(__name__)
+    logger.info("Creating Phase 2 master aggregated peak ranks file...")
+    
+    aggregated_dir = os.path.join(config['output_dir'], 'aggregated_results')
+    all_peaks_data = []
+    
+    for gene, peak_list in selected_peaks.items():
+        if gene in aggregated_results and not aggregated_results[gene].empty:
+            # Get the aggregated importance data for this gene
+            importance_df = aggregated_results[gene]
+            
+            # Filter to only include peaks that are used in Phase 2
+            phase2_peaks = set(peak_list)
+            filtered_df = importance_df[importance_df['Peaks'].isin(phase2_peaks)].copy()
+            
+            if not filtered_df.empty:
+                # Create gene-specific data
+                gene_df = filtered_df[['Peaks', 'Average_Zscore']].copy()
+                gene_df['Gene'] = gene
+                gene_df['Rank'] = range(1, len(gene_df) + 1)
+                gene_df = gene_df[['Gene', 'Peaks', 'Average_Zscore', 'Rank']]
+                gene_df.columns = ['Gene', 'Peak', 'Avg_Zscore', 'Rank']
+                
+                all_peaks_data.append(gene_df)
+                logger.info(f"  {gene}: {len(gene_df)} peaks for Phase 2")
+    
+    if all_peaks_data:
+        # Combine all data
+        master_df = pd.concat(all_peaks_data, ignore_index=True)
+        
+        # Save master file
+        output_file = os.path.join(aggregated_dir, 'master_aggregated_peak_ranks.csv')
+        master_df.to_csv(output_file, index=False)
+        logger.info(f"  Saved Phase 2 master aggregated peak ranks to {output_file}")
+        
+        # Create summary statistics
+        summary_stats = {
+            'Total_Genes': master_df['Gene'].nunique(),
+            'Total_Unique_Peaks': master_df['Peak'].nunique(),
+            'Avg_Peaks_Per_Gene': len(master_df) / master_df['Gene'].nunique() if master_df['Gene'].nunique() > 0 else 0
+        }
+        
+        # Add gene-specific stats
+        for gene in master_df['Gene'].unique():
+            gene_data = master_df[master_df['Gene'] == gene]
+            summary_stats[f'{gene}_Total_Peaks'] = len(gene_data)
+            summary_stats[f'{gene}_Top_Peak'] = gene_data.iloc[0]['Peak'] if len(gene_data) > 0 else 'N/A'
+            summary_stats[f'{gene}_Top_Zscore'] = gene_data.iloc[0]['Avg_Zscore'] if len(gene_data) > 0 else 'N/A'
+        
+        # Save summary
+        summary_file = os.path.join(aggregated_dir, 'phase2_aggregation_summary.txt')
+        with open(summary_file, 'w') as f:
+            f.write("PHASE 2 AGGREGATED PEAK RANKS SUMMARY\n")
+            f.write("=" * 50 + "\n\n")
+            f.write("This summary reflects only the peaks used in Phase 2 models.\n\n")
+            for key, value in summary_stats.items():
+                f.write(f"{key}: {value}\n")
+        
+        logger.info(f"  Saved Phase 2 aggregation summary to {summary_file}")
+        
+        return output_file
+    else:
+        logger.warning("No Phase 2 peak data to create master file")
+        return None
 
 
 if __name__ == "__main__":
