@@ -112,6 +112,22 @@ def aggregate_peak_importances(phase1_results_dir, output_dir, include_lr=False)
         gene_path = os.path.join(phase1_results_dir, gene)
         logger.info(f"  Processing {gene}")
         
+        # ADDED: Load Phase 1 filtered peaks
+        phase1_peaks_file = os.path.join(gene_path, "data", "peaks.csv")
+        if os.path.exists(phase1_peaks_file):
+            phase1_peaks = pd.read_csv(phase1_peaks_file, index_col=0)
+            # Apply same filter as Phase 1 (10% presence)
+            min_presence = 0.1
+            n_samples_required = int(len(phase1_peaks.columns) * min_presence)
+            filtered_peaks = phase1_peaks.loc[
+                phase1_peaks[phase1_peaks.columns].ne(0).sum(axis=1) >= n_samples_required
+            ]
+            filtered_peak_list = list(filtered_peaks.index)
+            logger.info(f"    Phase 1 filtered peaks: {len(filtered_peak_list)}")
+        else:
+            logger.warning(f"    No Phase 1 data found for {gene}")
+            continue
+        
         # Initialize output DataFrame
         alpha_summary = pd.DataFrame()
         
@@ -119,7 +135,7 @@ def aggregate_peak_importances(phase1_results_dir, output_dir, include_lr=False)
         if include_lr:
             test_list = [
                 "rf_dropcolranker", "rf_permranker", "rf_ranker",
-                "lr_dropcolranker", "lr_permranker",
+                "lr_dropcolranker", "lr_permranker",  # Note: no lr_ranker
                 "xgb_dropcolranker", "xgb_permranker", "xgb_ranker",
                 "lgbm_dropcolranker", "lgbm_permranker", "lgbm_ranker"
             ]
@@ -156,19 +172,25 @@ def aggregate_peak_importances(phase1_results_dir, output_dir, include_lr=False)
             # Read importance scores
             peak_rank_df = pd.read_csv(selected_file)
             
-            # Fix peak coordinates for LightGBM (they use underscores)
+            # Fix LGBM peak names (they use underscores instead of colons/dashes)
             if 'lgbm' in test:
                 peak_rank_df['Peak'] = peak_rank_df['Peak'].apply(
-                    lambda x: x.replace('_', ':').replace(':', '-', 1)
+                    lambda x: x.replace('_', ':', 1).replace('_', '-', 1)
                 )
             
             # Calculate z-scores for importance values
             mu = peak_rank_df['Importance'].mean()
             sigma = peak_rank_df['Importance'].std()
             
+            if sigma == 0:  # Avoid division by zero
+                z_scores = pd.Series([0] * len(peak_rank_df))
+            else:
+                z_scores = (peak_rank_df['Importance'] - mu) / sigma
+            
+            # Create temp DataFrame for this method
             temp_summary = pd.DataFrame()
             temp_summary['Peaks'] = peak_rank_df['Peak']
-            temp_summary[f'{test}_Zscore'] = (peak_rank_df['Importance'] - mu) / sigma
+            temp_summary[f'{test}_Zscore'] = z_scores
             
             # Merge with main summary
             if alpha_summary.empty:
@@ -178,6 +200,10 @@ def aggregate_peak_importances(phase1_results_dir, output_dir, include_lr=False)
                                        on='Peaks', how='outer')
         
         if not alpha_summary.empty:
+            # ADDED: Filter to only include peaks that passed Phase 1 filtering
+            alpha_summary = alpha_summary[alpha_summary['Peaks'].isin(filtered_peak_list)]
+            logger.info(f"    After filtering: {len(alpha_summary)} peaks")
+            
             # Calculate average z-score across all methods
             zscore_columns = [col for col in alpha_summary.columns if 'Zscore' in col]
             alpha_summary['Average_Zscore'] = alpha_summary[zscore_columns].mean(axis=1)
@@ -195,7 +221,7 @@ def aggregate_peak_importances(phase1_results_dir, output_dir, include_lr=False)
             alpha_summary.to_csv(filename, index=True)
             
             aggregated_results[gene] = alpha_summary
-            logger.info(f"    Aggregated {len(alpha_summary)} peaks")
+            logger.info(f"    Aggregated {len(alpha_summary)} peaks with {len(zscore_columns)} methods")
     
     return aggregated_results
 
