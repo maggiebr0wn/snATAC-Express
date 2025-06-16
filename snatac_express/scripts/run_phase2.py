@@ -90,14 +90,6 @@ def create_master_aggregated_peaks(aggregated_results, output_dir, logger):
 def aggregate_peak_importances(phase1_results_dir, output_dir, include_lr=False):
     """
     Aggregate peak importance scores across all genes from Phase 1
-    
-    Args:
-        phase1_results_dir: Directory containing Phase 1 results
-        output_dir: Where to save aggregated results
-        include_lr: Whether to include Linear Regression in aggregation
-    
-    Returns:
-        Dictionary mapping genes to their aggregated peak importance DataFrames
     """
     logger = logging.getLogger(__name__)
     logger.info("Aggregating peak importances across all genes")
@@ -135,7 +127,7 @@ def aggregate_peak_importances(phase1_results_dir, output_dir, include_lr=False)
         if include_lr:
             test_list = [
                 "rf_dropcolranker", "rf_permranker", "rf_ranker",
-                "lr_dropcolranker", "lr_permranker",  # Note: no lr_ranker
+                "lr_dropcolranker", "lr_permranker",
                 "xgb_dropcolranker", "xgb_permranker", "xgb_ranker",
                 "lgbm_dropcolranker", "lgbm_permranker", "lgbm_ranker"
             ]
@@ -151,7 +143,6 @@ def aggregate_peak_importances(phase1_results_dir, output_dir, include_lr=False)
         if os.path.exists(feature_rankings_dir):
             base_dir = feature_rankings_dir
         else:
-            # Fallback to gene directory (for backward compatibility)
             base_dir = gene_path
         
         # Collect importance scores from each method
@@ -160,14 +151,30 @@ def aggregate_peak_importances(phase1_results_dir, output_dir, include_lr=False)
             if not os.path.exists(test_dir):
                 continue
                 
-            # Find importance files (use the one with most peaks - typically all peaks)
+            # Find importance files
             importance_files = glob.glob(os.path.join(test_dir, "*importance.csv"))
             if not importance_files:
                 continue
-                
-            # Sort by file size to get the file with all peaks
-            importance_files.sort(key=lambda x: os.path.getsize(x), reverse=True)
-            selected_file = importance_files[0]
+            
+            # CORRECTED: Use the Phase 1 95% selected peaks
+            # Look for the smaller file (95% selection) not the larger one (all peaks)
+            selected_file = None
+            
+            # First, try to find a file with ~109 peaks (the 95% selection)
+            for file in importance_files:
+                df = pd.read_csv(file)
+                # Check if this is likely the 95% selection file
+                if 100 <= len(df) <= 115:  # Looking for ~109 peaks
+                    selected_file = file
+                    logger.info(f"      Found 95% selection file for {test}: {len(df)} peaks")
+                    break
+            
+            # If no 95% file found, use the largest file but we'll filter later
+            if selected_file is None:
+                # Use the largest file (all peaks)
+                importance_files.sort(key=lambda x: os.path.getsize(x), reverse=True)
+                selected_file = importance_files[0]
+                logger.info(f"      Using all peaks file for {test}")
             
             # Read importance scores
             peak_rank_df = pd.read_csv(selected_file)
@@ -178,32 +185,32 @@ def aggregate_peak_importances(phase1_results_dir, output_dir, include_lr=False)
                     lambda x: x.replace('_', ':', 1).replace('_', '-', 1)
                 )
             
+            # IMPORTANT: Filter to only Phase 1 filtered peaks BEFORE calculating z-scores
+            peak_rank_df = peak_rank_df[peak_rank_df['Peak'].isin(filtered_peak_list)]
+            
             # Calculate z-scores for importance values
-            mu = peak_rank_df['Importance'].mean()
-            sigma = peak_rank_df['Importance'].std()
-            
-            if sigma == 0:  # Avoid division by zero
-                z_scores = pd.Series([0] * len(peak_rank_df))
-            else:
-                z_scores = (peak_rank_df['Importance'] - mu) / sigma
-            
-            # Create temp DataFrame for this method
-            temp_summary = pd.DataFrame()
-            temp_summary['Peaks'] = peak_rank_df['Peak']
-            temp_summary[f'{test}_Zscore'] = z_scores
-            
-            # Merge with main summary
-            if alpha_summary.empty:
-                alpha_summary = temp_summary
-            else:
-                alpha_summary = pd.merge(alpha_summary, temp_summary, 
-                                       on='Peaks', how='outer')
+            if len(peak_rank_df) > 0:
+                mu = peak_rank_df['Importance'].mean()
+                sigma = peak_rank_df['Importance'].std()
+                
+                if sigma == 0:  # Avoid division by zero
+                    z_scores = pd.Series([0] * len(peak_rank_df))
+                else:
+                    z_scores = (peak_rank_df['Importance'] - mu) / sigma
+                
+                # Create temp DataFrame for this method
+                temp_summary = pd.DataFrame()
+                temp_summary['Peaks'] = peak_rank_df['Peak']
+                temp_summary[f'{test}_Zscore'] = z_scores.values
+                
+                # Merge with main summary
+                if alpha_summary.empty:
+                    alpha_summary = temp_summary
+                else:
+                    alpha_summary = pd.merge(alpha_summary, temp_summary, 
+                                           on='Peaks', how='outer')
         
         if not alpha_summary.empty:
-            # ADDED: Filter to only include peaks that passed Phase 1 filtering
-            alpha_summary = alpha_summary[alpha_summary['Peaks'].isin(filtered_peak_list)]
-            logger.info(f"    After filtering: {len(alpha_summary)} peaks")
-            
             # Calculate average z-score across all methods
             zscore_columns = [col for col in alpha_summary.columns if 'Zscore' in col]
             alpha_summary['Average_Zscore'] = alpha_summary[zscore_columns].mean(axis=1)
