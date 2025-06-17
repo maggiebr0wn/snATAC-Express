@@ -10,12 +10,11 @@
 
 ## 🔍 Features
 
-- **Multiple ML Models**: Random Forest, XGBoost, LightGBM, Linear Regression  
-- **Advanced Feature Selection**: Model-based, permutation, drop-column importance
+- **Multiple ML Models**: Random Forest Regression, XGBoost, LightGBM, Linear Regression  
+- **Multiple Feature Selection Methods**: Model-based, permutation, drop-column importance
 - **Robust Validation**: Nested cross-validation with hyperparameter tuning  
 - **Comprehensive Outputs**: Performance metrics, predictions, ranked regulatory regions
 - **Two-Phase Workflow**: Initial feature selection followed by refined modeling using aggregated importance
-- **Parallel Processing**: Support for high-performance computing environments
 
 ## ⚙️ Installation
 
@@ -159,7 +158,7 @@ results/
 
 ## 🔄 Two-Phase Workflow
 
-### Phase 1: Feature Selection and Initial Modeling
+### Phase 1: Feature Selection and Tuning 
 1. **Data Processing**: Load and pseudobulk single-cell data
 2. **Peak Filtering**: Apply sample presence thresholds (e.g., peaks in ≥10% of samples)
 3. **Model Training**: Train multiple ML models with hyperparameter tuning
@@ -177,13 +176,13 @@ results/
 
 ## 📓 Tutorial
 
-For a comprehensive walkthrough of the snATAC-Express workflow, see our interactive tutorial:
+For a walkthrough of the snATAC-Express workflow, see our interactive tutorial:
 
-**[📖 tutorial.ipynb](tutorial.ipynb)** - Complete step-by-step guide covering:
+**[📖 tutorial.ipynb](tutorial.ipynb)** - Complete step-by-step guide:
 - Data loading and inspection
 - Configuration setup
 - Running both Phase 1 and Phase 2
-- Results interpretation and visualization
+- Results interpretation
 
 The tutorial uses the provided example data and demonstrates the full two-phase pipeline.
 
@@ -236,7 +235,7 @@ See the included `config.yaml` for detailed configuration options.
 
 ## 🚀 High-Performance Computing
 
-For large-scale analyses, the package supports parallel processing:
+For large-scale analyses, the package supports parallel processing. Please see the example script `init_parallel_sbatch.py` and modify accoridngly for your compute environment.
 
 ```bash
 # Run on SLURM cluster
