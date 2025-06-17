@@ -156,25 +156,16 @@ def aggregate_peak_importances(phase1_results_dir, output_dir, include_lr=False)
             if not importance_files:
                 continue
             
-            # CORRECTED: Use the Phase 1 95% selected peaks
-            # Look for the smaller file (95% selection) not the larger one (all peaks)
-            selected_file = None
+            # CORRECTED: Use the same logic as original aggregate_peak_ranks.py
+            # Original implementation always used the largest file (by line count)
+            def count_lines(file_path):
+                with open(file_path, 'r') as file:
+                    return sum(1 for line in file)
             
-            # First, try to find a file with ~109 peaks (the 95% selection)
-            for file in importance_files:
-                df = pd.read_csv(file)
-                # Check if this is likely the 95% selection file
-                if 100 <= len(df) <= 115:  # Looking for ~109 peaks
-                    selected_file = file
-                    logger.info(f"      Found 95% selection file for {test}: {len(df)} peaks")
-                    break
-            
-            # If no 95% file found, use the largest file but we'll filter later
-            if selected_file is None:
-                # Use the largest file (all peaks)
-                importance_files.sort(key=lambda x: os.path.getsize(x), reverse=True)
-                selected_file = importance_files[0]
-                logger.info(f"      Using all peaks file for {test}")
+            # Sort files by line count and select the largest (same as original)
+            sorted_files = sorted(importance_files, key=count_lines, reverse=True)
+            selected_file = sorted_files[0]
+            logger.info(f"      Using largest file for {test}")
             
             # Read importance scores
             peak_rank_df = pd.read_csv(selected_file)
@@ -236,9 +227,12 @@ def get_top_aggregated_peaks(aggregated_results, top_percentage=0.95):
     """
     Get top peaks based on aggregated importance across all genes
     
+    Uses ORIGINAL IMPLEMENTATION: cumulative importance approach
+    Selects peaks until their cumulative importance reaches the threshold percentage
+    
     Args:
         aggregated_results: Dictionary of gene -> aggregated importance DataFrames
-        top_percentage: Percentage of cumulative importance to keep
+        top_percentage: Percentage of total importance to keep (by cumulative importance)
     
     Returns:
         Dictionary mapping genes to their selected top peaks
@@ -252,23 +246,23 @@ def get_top_aggregated_peaks(aggregated_results, top_percentage=0.95):
         if importance_df.empty:
             continue
             
-        # Adjust z-scores to be positive
+        # ORIGINAL IMPLEMENTATION: Use cumulative importance approach
+        # Adjust z-scores to be non-negative (same as original)
         min_zscore = importance_df['Average_Zscore'].min()
         importance_df['Adjusted_Zscore'] = importance_df['Average_Zscore'] + abs(min_zscore)
         
-        # Sort by adjusted z-score
+        # Sort by adjusted z-score (descending - highest importance first)
         df_sorted = importance_df.sort_values(by='Adjusted_Zscore', ascending=False)
         
-        # Find cumulative top percentage
+        # Calculate cumulative importance threshold
         total_sum = df_sorted['Adjusted_Zscore'].sum()
         threshold = top_percentage * total_sum
         
-        # Select peaks up to threshold
-        cumsum = df_sorted['Adjusted_Zscore'].cumsum()
-        top_peaks = df_sorted[cumsum <= threshold]
+        # Select peaks until cumulative importance reaches threshold
+        top_95_peaks = df_sorted[df_sorted['Adjusted_Zscore'].cumsum() <= threshold]
         
-        selected_peaks[gene] = top_peaks['Peaks'].tolist()
-        logger.info(f"  {gene}: selected {len(top_peaks)} / {len(importance_df)} peaks")
+        selected_peaks[gene] = top_95_peaks['Peaks'].tolist()
+        logger.info(f"  {gene}: selected {len(top_95_peaks)} / {len(importance_df)} peaks")
     
     return selected_peaks
 
