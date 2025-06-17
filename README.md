@@ -14,7 +14,7 @@
 - **Advanced Feature Selection**: Model-based, permutation, drop-column importance
 - **Robust Validation**: Nested cross-validation with hyperparameter tuning  
 - **Comprehensive Outputs**: Performance metrics, predictions, ranked regulatory regions
-- **Two-Phase Workflow**: Initial feature selection followed by refined modeling
+- **Two-Phase Workflow**: Initial feature selection followed by refined modeling using aggregated importance
 - **Parallel Processing**: Support for high-performance computing environments
 
 ## ⚙️ Installation
@@ -61,10 +61,10 @@ pip install snatac-express
 Organize your input files in the following structure:
 ```
 input_data/
-├── sparse_gex_matrix.mtx      # Gene expression matrix (sparse format)
-├── sparse_peak_matrix.mtx     # Peak accessibility matrix (sparse format)
-├── group_coverages.csv        # Cell group coverage information (obtained from ArchR)
-└── genelist.txt              # List of genes to analyze
+├── sparse_gex_matrix.txt.mtx     # Gene expression matrix (sparse format)
+├── sparse_peak_matrix.txt.mtx    # Peak accessibility matrix (sparse format)
+├── group_coverages.csv           # Cell group coverage information (obtained from ArchR)
+└── genelist_genebody.txt         # List of genes to analyze
 ```
 
 Examples are provided in the example_data folder.
@@ -81,14 +81,17 @@ cp snatac_express/config.yaml my_config.yaml
 
 #### Using the Command Line Interface
 ```bash
-# Run both phases
+# Run both phases (recommended)
 snatac-express --config my_config.yaml --phase both
 
-# Run only Phase 1 (feature selection)
+# Run only Phase 1 (feature selection and initial modeling)
 snatac-express --config my_config.yaml --phase 1
 
-# Run only Phase 2 (refined modeling)
+# Run only Phase 2 (aggregated feature selection and refined modeling)
 snatac-express --config my_config.yaml --phase 2
+
+# Run for specific gene(s)
+snatac-express --config my_config.yaml --phase both --gene BACH2
 ```
 
 #### Using Python API
@@ -120,22 +123,69 @@ The analysis produces organized results in the following structure:
 
 ```
 results/
-├── phase1_output/
-│   ├── gene_name/
-│   │   ├── model.pkl              # Trained model
-│   │   ├── predictions.csv        # Predicted vs actual values
-│   │   ├── feature_importance.csv # Feature rankings
-│   │   └── crossval_results.txt   # Performance metrics
-│   └── aggregated_results/
-│       └── selected_features.csv  # Top features across all genes
-├── phase2_output/
-│   └── gene_name/
-│       ├── refined_model.pkl      # Refined model with selected features
-│       ├── refined_predictions.csv
-│       └── refined_metrics.txt
+├── phase1_results/           # Phase 1: Initial modeling results
+│   └── GENE_NAME/
+│       ├── model_results/           # Cross-validation performance metrics
+│       ├── trained_models/          # Saved trained models (.pkl files)
+│       ├── feature_rankings/        # Feature importance rankings by method
+│       │   ├── rf_ranker/          # Random Forest built-in importance
+│       │   ├── rf_permranker/      # Random Forest permutation importance
+│       │   ├── rf_dropcolranker/   # Random Forest drop-column importance
+│       │   ├── xgb_ranker/         # XGBoost built-in importance
+│       │   ├── xgb_permranker/     # XGBoost permutation importance
+│       │   ├── xgb_dropcolranker/  # XGBoost drop-column importance
+│       │   ├── lgbm_ranker/        # LightGBM built-in importance
+│       │   ├── lgbm_permranker/    # LightGBM permutation importance
+│       │   └── lgbm_dropcolranker/ # LightGBM drop-column importance
+│       ├── data/                    # Processed input data for this gene
+│       └── cross_validation/        # Detailed CV fold results
+├── phase2_results/           # Phase 2: Refined modeling results  
+│   └── GENE_NAME/
+│       ├── model_results/           # Final model performance metrics
+│       ├── trained_models/          # Refined models using selected features
+│       ├── feature_rankings/        # Feature rankings from refined models
+│       └── data/                    # Selected features used in Phase 2
+├── aggregated_results/       # Cross-gene aggregated results
+│   ├── master_aggregated_peak_ranks.csv      # All genes' top features
+│   ├── phase2_aggregated_summary.csv         # Phase 2 performance summary
+│   ├── selected_peaks_summary.csv            # Selected features per gene
+│   └── GENE_NAME/
+│       └── aggregated_peak_importances_exclLR.csv  # Gene-specific aggregated ranks
+├── cv_summary.txt            # Phase 1 cross-validation summary
+├── phase2_cv_summary.txt     # Phase 2 cross-validation summary
 └── logs/
     └── snATAC_Express_YYYYMMDD_HHMMSS.log
 ```
+
+## 🔄 Two-Phase Workflow
+
+### Phase 1: Feature Selection and Initial Modeling
+1. **Data Processing**: Load and pseudobulk single-cell data
+2. **Peak Filtering**: Apply sample presence thresholds (e.g., peaks in ≥10% of samples)
+3. **Model Training**: Train multiple ML models with hyperparameter tuning
+4. **Feature Ranking**: Generate importance scores using 3 methods per model:
+   - Model-based importance (built-in)
+   - Permutation importance
+   - Drop-column importance
+5. **Top Feature Selection**: Select top 95% of features by importance for each method
+
+### Phase 2: Aggregated Feature Selection and Refined Modeling
+1. **Importance Aggregation**: Combine feature rankings across all methods using z-scores
+2. **Cumulative Selection**: Select features until cumulative importance reaches 95% of total
+3. **Refined Modeling**: Train final models using only the aggregated top features
+4. **Final Evaluation**: Generate final performance metrics and predictions
+
+## 📓 Tutorial
+
+For a comprehensive walkthrough of the snATAC-Express workflow, see our interactive tutorial:
+
+**[📖 tutorial.ipynb](tutorial.ipynb)** - Complete step-by-step guide covering:
+- Data loading and inspection
+- Configuration setup
+- Running both Phase 1 and Phase 2
+- Results interpretation and visualization
+
+The tutorial uses the provided example data and demonstrates the full two-phase pipeline.
 
 ## 🧪 Example Data
 
@@ -149,11 +199,25 @@ The package includes example data in `snatac_express/example_data/` to help you 
 
 The `config.yaml` file controls all aspects of the analysis:
 
+### Key Configuration Sections:
 - **Input/Output Paths**: Data locations and result directories
+- **Peak Filtering**: Options for sample presence thresholds (all, 10%, 50%)
 - **Model Settings**: Algorithm parameters and hyperparameter grids
 - **Feature Selection**: Methods and thresholds for feature ranking
 - **Cross-Validation**: Validation strategy and fold settings
-- **Advanced Options**: Gene windows, normalization, and filtering
+- **Phase Settings**: Specific configurations for each phase
+- **Advanced Options**: Gene windows, normalization, and aggregation settings
+
+### Important Settings:
+```yaml
+phase1:
+  selected_peak_filter: 1  # 0=all peaks, 1=≥10% samples, 2=≥50% samples
+  aggregation:
+    include_linear_regression: false  # Exclude LR from aggregation
+
+phase2:
+  top_features_percentage: 0.95  # Use top 95% by cumulative importance
+```
 
 See the included `config.yaml` for detailed configuration options.
 
@@ -167,8 +231,8 @@ See the included `config.yaml` for detailed configuration options.
 ## 🔬 Feature Selection Methods
 
 - **Model Importance**: Built-in feature importance from tree-based models
-- **Permutation Importance**: Robust importance estimation
-- **Drop-Column Importance**: Feature ablation analysis
+- **Permutation Importance**: Robust importance estimation via feature permutation
+- **Drop-Column Importance**: Feature ablation analysis (most computationally intensive)
 
 ## 🚀 High-Performance Computing
 
