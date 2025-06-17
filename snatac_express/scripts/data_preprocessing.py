@@ -141,17 +141,12 @@ def make_all_pseudobulk(gene_peaks, gene_exp, gene, pb_keep, outdir, peak_df, ge
     for pb_group in pb_keep.PB_Name:
         cellnames_raw = pb_keep[pb_keep.PB_Name == pb_group].CellNames.tolist()[0]
         cellnames = eval(cellnames_raw) if isinstance(cellnames_raw, str) else cellnames_raw
-        # keep only cell IDs that exist in the matrices
-        valid_cells = [c for c in cellnames if c in gene_peaks.columns]
-        if len(valid_cells) == 0:
-            # skip this pseudobulk if nothing matches (common with toy example data)
-            continue
         # extract pb_group from peak_mat, sum peak values
-        peak_subset = gene_peaks[valid_cells].sum(axis=1).to_frame()
+        peak_subset = gene_peaks[cellnames].sum(axis=1).to_frame()
         peak_subset.columns = [pb_group]
         pb_peak_df = pd.concat([pb_peak_df, peak_subset], axis=1)
         # extract pb_group from gex_mat, average expression values
-        gex_subset = gene_exp[valid_cells].sum(axis=1).to_frame()
+        gex_subset = gene_exp[cellnames].sum(axis=1).to_frame()
         gex_subset.columns = [pb_group]
         gex_peak_df = pd.concat([gex_peak_df, gex_subset], axis=1)
     ## normalize matrices

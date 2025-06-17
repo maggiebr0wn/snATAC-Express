@@ -326,8 +326,19 @@ def run_phase2_for_gene(gene, window, selected_peaks, config, peak_df, gex_df, p
     
     # Run all models - Phase 2 uses simpler approach (no 95% selection within phase)
     results = {}
-    models_to_run = [name for name, cfg in config['models'].items() if cfg.get('enabled', True)]
     
+    # Check if linear regression should be excluded
+    include_lr = config.get('phase1', {}).get('aggregation', {}).get('include_linear_regression', True)
+    
+    # Filter models based on config
+    models_to_run = []
+    for name, cfg in config['models'].items():
+        if cfg.get('enabled', True):
+            # Skip linear regression if not included in aggregation
+            if name == 'linear_regression' and not include_lr:
+                continue
+            models_to_run.append(name)
+
     for model_name in models_to_run:
         logger.info(f"  Running {model_name}")
         
