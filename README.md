@@ -16,6 +16,12 @@
 - **Comprehensive Outputs**: Performance metrics, predictions, ranked regulatory regions
 - **Two-Phase Workflow**: Initial feature selection followed by refined modeling using aggregated importance
 
+## 📄 Our preprint is live!
+
+Please see our preprint here: 
+
+[snATAC-Express infers Gene Expression from Prioritized Chromatin Accessibility Peaks using Machine Learning](https://www.biorxiv.org/content/10.1101/2025.07.25.666784v1) 
+
 ## ⚙️ Installation
 
 ### Option 1: Install from PyPI (Recommended)
